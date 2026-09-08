@@ -13,3 +13,5 @@ The system will also collect occupancy data that can be analysed using MATLAB to
 The project combines **IoT hardware, mobile application development, backend systems, and data analytics** to create a smarter and more efficient library experience.
 
 **Sensor → Arduino → Raspberry Pi → Backend → Flutter App → Student**
+
+
