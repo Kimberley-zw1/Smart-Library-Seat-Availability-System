@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'home_screen.dart';
 import 'first_floor_screen.dart';
 import 'ground_floor_screen.dart';
+import 'student_alerts.dart';
+import 'student_profile_screen.dart';
 
 class FloorSelectionScreen extends StatefulWidget {
   const FloorSelectionScreen({super.key});
@@ -20,6 +24,24 @@ class _FloorSelectionScreenState extends State<FloorSelectionScreen> {
 
     Navigator.of(context)
         .push(MaterialPageRoute(builder: (context) => targetScreen));
+  }
+
+  // Helper method to count available seats dynamically
+  int _countAvailableSeats(List<QueryDocumentSnapshot> docs) {
+    return docs.where((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      final dynamic statusValue = data['isOccupied'];
+
+      if (statusValue is bool) {
+        return !statusValue; // Available if isOccupied == false
+      }
+
+      if (statusValue is String) {
+        return statusValue.toLowerCase() == 'false';
+      }
+
+      return true;
+    }).length;
   }
 
   @override
@@ -46,7 +68,12 @@ class _FloorSelectionScreenState extends State<FloorSelectionScreen> {
                 ),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: () {
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (context) => const HomeScreen()),
+                    (route) => false,
+                  );
+                },
               ),
 
               const SizedBox(height: 24),
@@ -88,22 +115,54 @@ class _FloorSelectionScreenState extends State<FloorSelectionScreen> {
 
               const SizedBox(height: 36),
 
-              // Ground Floor Card
-              _buildFloorCard(
-                title: 'Ground floor',
-                subtitle: '24 seats available',
-                cardColor: cardRed,
-                onTap: () => _navigateToSeatMap('Ground floor'),
+              // Real-time Ground Floor Card (Floor 0)
+              StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('seats')
+                    .where('floor', isEqualTo: 0)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  String subtitle = 'Loading seats...';
+                  if (snapshot.hasData && snapshot.data != null) {
+                    final availableCount = _countAvailableSeats(
+                      snapshot.data!.docs,
+                    );
+                    subtitle = '$availableCount seats available';
+                  }
+
+                  return _buildFloorCard(
+                    title: 'Ground floor',
+                    subtitle: subtitle,
+                    cardColor: cardRed,
+                    onTap: () => _navigateToSeatMap('Ground floor'),
+                  );
+                },
               ),
 
               const SizedBox(height: 20),
 
-              // First Floor Card
-              _buildFloorCard(
-                title: 'First floor',
-                subtitle: '12 seats available',
-                cardColor: cardRed,
-                onTap: () => _navigateToSeatMap('First floor'),
+              // Real-time First Floor Card (Floor 1)
+              StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('seats')
+                    .where('floor', isEqualTo: 1)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  String subtitle = 'Loading seats...';
+                  if (snapshot.hasData && snapshot.data != null) {
+                    final availableCount = _countAvailableSeats(
+                      snapshot.data!.docs,
+                    );
+                    subtitle = '$availableCount seats available';
+                  }
+
+                  return _buildFloorCard(
+                    title: 'First floor',
+                    subtitle: subtitle,
+                    cardColor: cardRed,
+                    onTap: () => _navigateToSeatMap('First floor'),
+                  );
+                },
               ),
 
               const Spacer(),
@@ -118,11 +177,36 @@ class _FloorSelectionScreenState extends State<FloorSelectionScreen> {
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
           onTap: (index) {
+            if (index == _currentIndex) return;
+
             setState(() {
               _currentIndex = index;
             });
-            if (index == 0) {
-              Navigator.of(context).pop();
+
+            switch (index) {
+              case 0:
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => const HomeScreen()),
+                  (route) => false,
+                );
+                break;
+              case 1:
+                // Already on Floor Selection (Map) Screen
+                break;
+              case 2:
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(
+                    builder: (context) => const StudentAlerts(),
+                  ),
+                );
+                break;
+              case 3:
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(
+                    builder: (context) => const StudentProfileScreen(),
+                  ),
+                );
+                break;
             }
           },
           type: BottomNavigationBarType.fixed,

@@ -1,25 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-import '../student/student_login_screen.dart';
-import '../librarian/librarian_login_screen.dart';
-import '../admin/admin_login_screen.dart';
+import 'general_login_screen.dart';
 
 class RoleSelectionScreen extends StatelessWidget {
   const RoleSelectionScreen({super.key});
 
   void _selectRole(BuildContext context, String role) {
-    Widget targetScreen;
-
-    if (role == 'Student') {
-      targetScreen = const StudentLoginScreen();
-    } else if (role == 'Librarian') {
-      targetScreen = const LibrarianLoginScreen();
-    } else {
-      targetScreen = const AdminLoginScreen();
-    }
-
-    Navigator.of(context)
-        .push(MaterialPageRoute(builder: (context) => targetScreen));
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => GeneralLoginScreen(role: role)),
+    );
   }
 
   @override
@@ -35,22 +25,24 @@ class RoleSelectionScreen extends StatelessWidget {
             children: [
               const SizedBox(height: 40),
 
-              // Header Book Graphic
-              Container(
-                width: 100,
-                height: 100,
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(
-                  Icons.menu_book_rounded,
-                  size: 65,
-                  color: Colors.blue.shade600,
+              // Header Graphic Container matching Login Screen style
+              Center(
+                child: Container(
+                  width: 90,
+                  height: 90,
+                  decoration: BoxDecoration(
+                    color: primaryRed.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.menu_book_rounded,
+                    size: 50,
+                    color: primaryRed,
+                  ),
                 ),
               ),
 
-              const SizedBox(height: 28),
+              const SizedBox(height: 20),
 
               // Header Title
               const Text(
@@ -58,28 +50,34 @@ class RoleSelectionScreen extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.bold,
-                  color: primaryRed,
+                  color: Colors.black87,
                   letterSpacing: -0.3,
                 ),
                 textAlign: TextAlign.center,
               ),
+              const SizedBox(height: 8),
+              const Text(
+                'Please select your user role to continue',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: Colors.black54),
+              ),
 
-              const SizedBox(height: 48),
+              const SizedBox(height: 36),
 
               // Prompt Text
               const Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'I am a.....',
+                  'I am a...',
                   style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF5A6275),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
                   ),
                 ),
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
 
               // Role Buttons
               _buildRoleButton(
@@ -87,7 +85,7 @@ class RoleSelectionScreen extends StatelessWidget {
                 label: 'Student',
                 icon: Icons.school_rounded,
                 color: primaryRed,
-                onPressed: () => _selectRole(context, 'Student'),
+                onPressed: () => _selectRole(context, 'student'),
               ),
 
               const SizedBox(height: 16),
@@ -97,7 +95,7 @@ class RoleSelectionScreen extends StatelessWidget {
                 label: 'Librarian',
                 icon: Icons.collections_bookmark_rounded,
                 color: primaryRed,
-                onPressed: () => _selectRole(context, 'Librarian'),
+                onPressed: () => _selectRole(context, 'librarian'),
               ),
 
               const SizedBox(height: 16),
@@ -107,7 +105,18 @@ class RoleSelectionScreen extends StatelessWidget {
                 label: 'Administrator',
                 icon: Icons.settings_rounded,
                 color: primaryRed,
-                onPressed: () => _selectRole(context, 'Administrator'),
+                onPressed: () => _selectRole(context, 'admin'),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Exit App Button
+              _buildRoleButton(
+                context: context,
+                label: 'Exit',
+                icon: Icons.power_settings_new_rounded,
+                color: Colors.black87,
+                onPressed: () => SystemNavigator.pop(),
               ),
 
               const Spacer(),
@@ -127,7 +136,7 @@ class RoleSelectionScreen extends StatelessWidget {
   }) {
     return SizedBox(
       width: double.infinity,
-      height: 56,
+      height: 54,
       child: ElevatedButton(
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
@@ -135,25 +144,25 @@ class RoleSelectionScreen extends StatelessWidget {
           foregroundColor: Colors.white,
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 20),
         ),
         child: Row(
           children: [
-            Icon(icon, size: 28, color: Colors.white),
+            Icon(icon, size: 24, color: Colors.white),
             Expanded(
               child: Text(
                 label,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontSize: 18,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.bold,
                   color: Colors.white,
                 ),
               ),
             ),
-            const SizedBox(width: 28),
+            const SizedBox(width: 24),
           ],
         ),
       ),

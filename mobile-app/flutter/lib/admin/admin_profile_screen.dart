@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'admin_home_screen.dart';
 import 'admin_alerts_screen.dart';
 import 'admin_overview_screen.dart';
 import 'admin_reports_screen.dart';
+import '../shared/general_login_screen.dart';
 
 class AdminProfileScreen extends StatefulWidget {
   const AdminProfileScreen({super.key});
@@ -42,9 +45,74 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
         .pushReplacement(MaterialPageRoute(builder: (context) => targetScreen));
   }
 
+  Future<void> _handleLogout(BuildContext context) async {
+    await FirebaseAuth.instance.signOut();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (context) => const GeneralLoginScreen(role: 'admin'),
+      ),
+      (route) => false,
+    );
+  }
+
+  void _showChangePasswordDialog(BuildContext context) {
+    final email =
+        FirebaseAuth.instance.currentUser?.email ?? 'admin@africau.edu';
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(
+          'Reset Password',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Text('Send a password reset link to $email?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              try {
+                await FirebaseAuth.instance.sendPasswordResetEmail(
+                  email: email,
+                );
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Password reset email sent successfully.'),
+                    backgroundColor: Color(0xFFC82333),
+                  ),
+                );
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error: $e'),
+                    backgroundColor: const Color(0xFFC82333),
+                  ),
+                );
+              }
+            },
+            child: const Text(
+              'Send',
+              style: TextStyle(
+                color: Color(0xFFC82333),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     const primaryRed = Color(0xFFC82333);
+    final currentUser = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -54,15 +122,10 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: primaryRed),
           onPressed: () {
-            if (Navigator.of(context).canPop()) {
-              Navigator.of(context).pop();
-            } else {
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(
-                  builder: (context) => const AdminHomeScreen(),
-                ),
-              );
-            }
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (context) => const AdminHomeScreen()),
+              (route) => false,
+            );
           },
         ),
         title: const Text(
@@ -78,73 +141,141 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const SizedBox(height: 10),
+          child: StreamBuilder<DocumentSnapshot>(
+            stream: currentUser != null
+                ? FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(currentUser.uid)
+                      .snapshots()
+                : null,
+            builder: (context, snapshot) {
+              String name = currentUser?.displayName ?? 'Admin';
+              String email = currentUser?.email ?? 'admin@africau.edu';
+              String roleTitle = 'Administrator';
 
-              // Profile Picture Avatar
-              CircleAvatar(
-                radius: 54,
-                backgroundColor: const Color(0xFFF3E8E9),
-                child: Icon(
-                  Icons.person,
-                  size: 72,
-                  color: Colors.blueGrey.shade400,
-                ),
-              ),
-              const SizedBox(height: 16),
+              if (snapshot.hasData &&
+                  snapshot.data != null &&
+                  snapshot.data!.exists) {
+                final data = snapshot.data!.data() as Map<String, dynamic>?;
+                if (data != null) {
+                  name = data['fullName'] ?? name;
+                  email = data['email'] ?? email;
+                  final r = (data['role'] ?? 'admin').toString();
+                  roleTitle = r[0].toUpperCase() + r.substring(1);
+                }
+              }
 
-              // User Name
-              const Text(
-                'Admin',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
-                ),
-              ),
-              const SizedBox(height: 4),
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const SizedBox(height: 10),
 
-              // Role
-              Text(
-                'Administrator',
-                style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
-              ),
-              const SizedBox(height: 4),
+                  // Profile Picture Avatar
+                  CircleAvatar(
+                    radius: 54,
+                    backgroundColor: const Color(0xFFF3E8E9),
+                    child: Icon(
+                      Icons.person,
+                      size: 72,
+                      color: Colors.blueGrey.shade400,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
 
-              // Email
-              Text(
-                'admin@africau.edu',
-                style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
-              ),
-              const SizedBox(height: 32),
+                  // User Name
+                  Text(
+                    name,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
 
-              // Option Buttons
-              _buildMenuButton(
-                title: 'Personal Information',
-                onPressed: () {},
-                color: primaryRed,
-              ),
-              const SizedBox(height: 14),
-              _buildMenuButton(
-                title: 'Change Password',
-                onPressed: () {},
-                color: primaryRed,
-              ),
-              const SizedBox(height: 14),
-              _buildMenuButton(
-                title: 'App Settings',
-                onPressed: () {},
-                color: primaryRed,
-              ),
-              const SizedBox(height: 14),
-              _buildMenuButton(
-                title: 'Help & Support',
-                onPressed: () {},
-                color: primaryRed,
-              ),
-            ],
+                  // Role
+                  Text(
+                    roleTitle,
+                    style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 4),
+
+                  // Email
+                  Text(
+                    email,
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+                  ),
+                  const SizedBox(height: 32),
+
+                  // Option Buttons with Matching Icons
+                  _buildMenuButton(
+                    title: 'Personal Information',
+                    icon: Icons.badge_outlined,
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Logged in as $name ($email)')),
+                      );
+                    },
+                    color: primaryRed,
+                  ),
+                  const SizedBox(height: 14),
+                  _buildMenuButton(
+                    title: 'Change Password',
+                    icon: Icons.lock_outline_rounded,
+                    onPressed: () => _showChangePasswordDialog(context),
+                    color: primaryRed,
+                  ),
+                  const SizedBox(height: 14),
+                  _buildMenuButton(
+                    title: 'App Settings',
+                    icon: Icons.settings_outlined,
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'System is running on latest build version.',
+                          ),
+                        ),
+                      );
+                    },
+                    color: primaryRed,
+                  ),
+                  const SizedBox(height: 14),
+                  _buildMenuButton(
+                    title: 'Help & Support',
+                    icon: Icons.help_outline_rounded,
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Admin Support'),
+                          content: const Text(
+                            'For system escalations, contact IT Services at africau.edu.',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: const Text(
+                                'OK',
+                                style: TextStyle(color: primaryRed),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    color: primaryRed,
+                  ),
+                  const SizedBox(height: 14),
+                  _buildMenuButton(
+                    title: 'Log Out',
+                    icon: Icons.logout_rounded,
+                    onPressed: () => _handleLogout(context),
+                    color: Colors.black87,
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -195,6 +326,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
 
   Widget _buildMenuButton({
     required String title,
+    required IconData icon,
     required VoidCallback onPressed,
     required Color color,
   }) {
@@ -213,11 +345,17 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
         ),
         onPressed: onPressed,
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              title,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            Icon(icon, color: Colors.white, size: 22),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
             const Icon(Icons.chevron_right, color: Colors.white, size: 22),
           ],

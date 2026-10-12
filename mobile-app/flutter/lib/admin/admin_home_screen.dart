@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'admin_profile_screen.dart';
 import 'admin_reports_screen.dart';
@@ -14,6 +15,45 @@ class AdminHomeScreen extends StatefulWidget {
 
 class _AdminHomeScreenState extends State<AdminHomeScreen> {
   int _currentIndex = 0;
+
+  void _onTabTapped(int index) {
+    if (index == _currentIndex) return;
+
+    Widget targetScreen;
+    switch (index) {
+      case 0:
+        return; // Already on Dashboard
+      case 1:
+        targetScreen = const AdminAlertsScreen();
+        break;
+      case 2:
+        targetScreen = const AdminOverviewScreen();
+        break;
+      case 3:
+        targetScreen = const AdminReportsScreen();
+        break;
+      case 4:
+        targetScreen = const AdminProfileScreen();
+        break;
+      default:
+        return;
+    }
+
+    Navigator.of(context)
+        .pushReplacement(MaterialPageRoute(builder: (context) => targetScreen));
+  }
+
+  String _formatTimestamp(Timestamp? timestamp) {
+    if (timestamp == null) return 'Just now';
+    final DateTime dateTime = timestamp.toDate();
+    final DateTime now = DateTime.now();
+    final Duration diff = now.difference(dateTime);
+
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
+    if (diff.inHours < 24) return '${diff.inHours} hr ago';
+    return '${diff.inDays} day(s) ago';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,152 +92,225 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
               const SizedBox(height: 24),
 
-              // Total Seats Card
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: softPinkFill,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: const [
-                        Text(
-                          'Total Seats: 4',
+              // Total Seats Card (Real-time from 'seats')
+              StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('seats')
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  int totalSeats = 0;
+                  int occupiedCount = 0;
+                  int availableCount = 0;
+
+                  if (snapshot.hasData && snapshot.data != null) {
+                    final docs = snapshot.data!.docs;
+                    totalSeats = docs.length;
+                    for (var doc in docs) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      final bool isOccupied =
+                          data['isOccupied'] as bool? ?? false;
+                      if (isOccupied) {
+                        occupiedCount++;
+                      } else {
+                        availableCount++;
+                      }
+                    }
+                  }
+
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: softPinkFill,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Total Seats: ${totalSeats == 0 ? 4 : totalSeats}',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: primaryRed,
+                              ),
+                            ),
+                            const Icon(
+                              Icons.account_balance_rounded,
+                              color: Color(0xFF8B7E74),
+                              size: 28,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            // Occupied Count
+                            Row(
+                              children: [
+                                Container(
+                                  width: 12,
+                                  height: 12,
+                                  decoration: const BoxDecoration(
+                                    color: primaryRed,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '$occupiedCount',
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                const Text(
+                                  'Occupied',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: textSubColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(width: 32),
+                            // Available Count
+                            Row(
+                              children: [
+                                Container(
+                                  width: 12,
+                                  height: 12,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFF2EC4B6),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '$availableCount',
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                const Text(
+                                  'Available',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: textSubColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+
+              const SizedBox(height: 20),
+
+              // Live Seat Map Overview Card (Real-time floors breakdown)
+              StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('seats')
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  int groundTotal = 0;
+                  int groundOccupied = 0;
+                  int firstTotal = 0;
+                  int firstOccupied = 0;
+
+                  if (snapshot.hasData && snapshot.data != null) {
+                    for (var doc in snapshot.data!.docs) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      final seatId = doc.id.toUpperCase();
+                      final bool isOccupied =
+                          data['isOccupied'] as bool? ?? false;
+
+                      // Categorize by floor name or seat ID convention (e.g., Ground / First)
+                      final String floor = (data['floor'] ?? '')
+                          .toString()
+                          .toLowerCase();
+                      if (floor.contains('first') || seatId.startsWith('F')) {
+                        firstTotal++;
+                        if (isOccupied) firstOccupied++;
+                      } else {
+                        groundTotal++;
+                        if (isOccupied) groundOccupied++;
+                      }
+                    }
+                  }
+
+                  if (groundTotal == 0 && firstTotal == 0) {
+                    groundTotal = 2;
+                    firstTotal = 2;
+                  }
+
+                  final double groundProgress = groundTotal > 0
+                      ? (groundTotal - groundOccupied) / groundTotal
+                      : 1.0;
+                  final double firstProgress = firstTotal > 0
+                      ? (firstTotal - firstOccupied) / firstTotal
+                      : 1.0;
+
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: softPinkFill,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Live Seat Map Overview',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: primaryRed,
+                            color: Colors.black87,
                           ),
                         ),
-                        Icon(
-                          Icons.account_balance_rounded,
-                          color: Color(0xFF8B7E74),
-                          size: 28,
+                        const SizedBox(height: 16),
+
+                        // Ground Floor Row
+                        _buildFloorOverviewRow(
+                          floorName: 'Ground Floor',
+                          details:
+                              '$groundTotal seats · $groundOccupied occupied',
+                          progress: groundProgress,
+                          barColor: primaryRed,
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // First Floor Row
+                        _buildFloorOverviewRow(
+                          floorName: 'First Floor',
+                          details:
+                              '$firstTotal seats · $firstOccupied occupied',
+                          progress: firstProgress,
+                          barColor: primaryRed,
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        // Occupied Count
-                        Row(
-                          children: [
-                            Container(
-                              width: 12,
-                              height: 12,
-                              decoration: const BoxDecoration(
-                                color: primaryRed,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              '1',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black87,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            const Text(
-                              'Occupied',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: textSubColor,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(width: 32),
-                        // Available Count
-                        Row(
-                          children: [
-                            Container(
-                              width: 12,
-                              height: 12,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF2EC4B6),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              '3',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black87,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            const Text(
-                              'Available',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: textSubColor,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                  );
+                },
               ),
 
               const SizedBox(height: 20),
 
-              // Live Seat Map Overview Card
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: softPinkFill,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Live Seat Map Overview',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Ground Floor Row
-                    _buildFloorOverviewRow(
-                      floorName: 'Ground Floor',
-                      details: '2 seats · 0 occupied',
-                      progress: 1.0, // 100% available/red bar
-                      barColor: primaryRed,
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // First Floor Row
-                    _buildFloorOverviewRow(
-                      floorName: 'First Floor',
-                      details: '2 seats · 1 occupied',
-                      progress: 0.75, // Partial occupied
-                      barColor: primaryRed,
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // Staff & Alert Activity Card
+              // Staff & Alert Activity Card (Real-time from 'admin_alerts')
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(20),
@@ -217,16 +330,51 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
+                    StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection('admin_alerts')
+                          .orderBy('timestamp', descending: true)
+                          .limit(2)
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(8.0),
+                              child: CircularProgressIndicator(
+                                color: primaryRed,
+                                strokeWidth: 2,
+                              ),
+                            ),
+                          );
+                        }
 
-                    _buildActivityItem(
-                      'Mr. Moyo sent closing alert — 5 min ago',
-                    ),
-                    const SizedBox(height: 12),
-                    _buildActivityItem(
-                      'Seat A3 flagged past closing — 12 min ago',
-                    ),
+                        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                          return _buildActivityItem(
+                            'No recent staff activity recorded.',
+                          );
+                        }
 
-                    const SizedBox(height: 16),
+                        final docs = snapshot.data!.docs;
+
+                        return Column(
+                          children: docs.map((doc) {
+                            final data = doc.data() as Map<String, dynamic>;
+                            final String title = data['title'] ?? '';
+                            final Timestamp? timestamp =
+                                data['timestamp'] as Timestamp?;
+                            final String timeStr = _formatTimestamp(timestamp);
+
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12.0),
+                              child: _buildActivityItem('$title — $timeStr'),
+                            );
+                          }).toList(),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 4),
                     const Divider(color: Color(0xFFF0D5D8)),
                     const SizedBox(height: 8),
 
@@ -234,7 +382,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       alignment: Alignment.centerRight,
                       child: GestureDetector(
                         onTap: () {
-                          // View all activity action
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => const AdminAlertsScreen(),
+                            ),
+                          );
                         },
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -272,42 +424,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         ),
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
-          onTap: (index) {
-            switch (index) {
-              case 1:
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => const AdminAlertsScreen(),
-                  ),
-                );
-                break;
-              case 2:
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => const AdminOverviewScreen(),
-                  ),
-                );
-                break;
-              case 3:
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => const AdminReportsScreen(),
-                  ),
-                );
-                break;
-              case 4:
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => const AdminProfileScreen(),
-                  ),
-                );
-                break;
-              default:
-                setState(() {
-                  _currentIndex = index;
-                });
-            }
-          },
+          onTap: _onTabTapped,
           type: BottomNavigationBarType.fixed,
           backgroundColor: Colors.white,
           selectedItemColor: primaryRed,
