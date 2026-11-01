@@ -15,3 +15,5 @@ workflows:
         script: flutter build ipa --release --no-codesign
     artifacts:
       - build/ios/ipa/*.ipa
+      - name: Install CocoaPods
+        script: cd ios && pod repo update && pod install
