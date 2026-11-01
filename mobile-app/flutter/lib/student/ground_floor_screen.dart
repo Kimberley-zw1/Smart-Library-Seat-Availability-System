@@ -11,6 +11,7 @@ class GroundFloorScreen extends StatelessWidget {
     const primaryRed = Color(0xFFC01A32);
     const availableGreen = Color(0xFF2EC4B6);
     const tableColor = Color(0xFFE0BB95);
+    const outOfOrderGrey = Colors.grey;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -49,18 +50,18 @@ class GroundFloorScreen extends StatelessWidget {
 
             // Legend Header
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32.0),
+              padding: const EdgeInsets.symmetric(horizontal: 24.0),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Row(
                     children: const [
                       Icon(Icons.circle, color: availableGreen, size: 10),
-                      SizedBox(width: 6),
+                      SizedBox(width: 4),
                       Text(
                         'Available',
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 12,
                           color: Color(0xFF8C919E),
                           fontWeight: FontWeight.w500,
                         ),
@@ -70,11 +71,25 @@ class GroundFloorScreen extends StatelessWidget {
                   Row(
                     children: const [
                       Icon(Icons.circle, color: primaryRed, size: 10),
-                      SizedBox(width: 6),
+                      SizedBox(width: 4),
                       Text(
                         'Occupied',
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 12,
+                          color: Color(0xFF8C919E),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    children: const [
+                      Icon(Icons.circle, color: outOfOrderGrey, size: 10),
+                      SizedBox(width: 4),
+                      Text(
+                        'Out of Order',
+                        style: TextStyle(
+                          fontSize: 12,
                           color: Color(0xFF8C919E),
                           fontWeight: FontWeight.w500,
                         ),
@@ -87,48 +102,29 @@ class GroundFloorScreen extends StatelessWidget {
 
             const SizedBox(height: 16),
 
-            // StreamBuilder listening to Firestore document IDs: 'G-01' & 'G-02'
-            // StreamBuilder listening directly to Firestore without aggressive timeouts
+            // StreamBuilder listening to Firestore seat documents
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
                     .collection('seats')
                     .snapshots(),
                 builder: (context, snapshot) {
-                  if (snapshot.hasData) {
-                    for (var doc in snapshot.data!.docs) {
-                      debugPrint("Doc ID: ${doc.id} => Data: ${doc.data()}");
-                    }
-                  }
-                  // 1. Handle actual Firestore stream errors (e.g., auth, network failure)
                   if (snapshot.hasError) {
                     return Center(
                       child: Padding(
                         padding: const EdgeInsets.all(24.0),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(
-                              Icons.wifi_off_rounded,
-                              color: primaryRed,
-                              size: 48,
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Firestore stream error:\n${snapshot.error}',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: Colors.black87,
-                              ),
-                            ),
-                          ],
+                        child: Text(
+                          'Firestore stream error:\n${snapshot.error}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Colors.black87,
+                          ),
                         ),
                       ),
                     );
                   }
 
-                  // 2. Initial loading state while waiting for first emission
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(
                       child: Column(
@@ -142,25 +138,38 @@ class GroundFloorScreen extends StatelessWidget {
                     );
                   }
 
-                  // 3. Process data when snapshot is ready
                   final docs = snapshot.data?.docs ?? [];
 
+                  // Seat States mapping
                   bool isG01Available = true;
+                  bool isG01OutOfOrder = false;
+
                   bool isG02Available = true;
+                  bool isG02OutOfOrder = false;
 
                   for (var doc in docs) {
                     final data = doc.data() as Map<String, dynamic>;
                     if (doc.id == 'G-01') {
-                      // If isOccupied is true, availability is false
                       final isOccupied = data['isOccupied'] ?? false;
-                      isG01Available = !isOccupied;
+                      isG01OutOfOrder = data['isOutOfOrder'] ?? false;
+                      isG01Available = !isOccupied && !isG01OutOfOrder;
                     }
 
                     if (doc.id == 'G-02') {
                       final isOccupied = data['isOccupied'] ?? false;
-                      isG02Available = !isOccupied;
+                      isG02OutOfOrder = data['isOutOfOrder'] ?? false;
+                      isG02Available = !isOccupied && !isG02OutOfOrder;
                     }
                   }
+
+                  // Determine colors & labels based on Out of Order status
+                  Color g01IndicatorColor = isG01OutOfOrder
+                      ? outOfOrderGrey
+                      : (isG01Available ? availableGreen : primaryRed);
+
+                  Color g02IndicatorColor = isG02OutOfOrder
+                      ? outOfOrderGrey
+                      : (isG02Available ? availableGreen : primaryRed);
 
                   return Padding(
                     padding: const EdgeInsets.symmetric(
@@ -245,9 +254,8 @@ class GroundFloorScreen extends StatelessWidget {
                             right: 20,
                             child: _buildSeatBlock(
                               label: '2',
-                              indicatorColor: isG02Available
-                                  ? availableGreen
-                                  : primaryRed,
+                              subLabel: isG02OutOfOrder ? 'Out of Order' : null,
+                              indicatorColor: g02IndicatorColor,
                               tableColor: tableColor,
                               onTap: () {
                                 Navigator.of(context).push(
@@ -269,9 +277,8 @@ class GroundFloorScreen extends StatelessWidget {
                             right: 20,
                             child: _buildSeatBlock(
                               label: '1',
-                              indicatorColor: isG01Available
-                                  ? availableGreen
-                                  : primaryRed,
+                              subLabel: isG01OutOfOrder ? 'Out of Order' : null,
+                              indicatorColor: g01IndicatorColor,
                               tableColor: tableColor,
                               onTap: () {
                                 Navigator.of(context).push(
@@ -303,6 +310,7 @@ class GroundFloorScreen extends StatelessWidget {
 
   Widget _buildSeatBlock({
     required String label,
+    String? subLabel,
     required Color indicatorColor,
     required Color tableColor,
     required VoidCallback onTap,
@@ -321,21 +329,33 @@ class GroundFloorScreen extends StatelessWidget {
             ),
           ),
           Container(
-            width: 70,
-            height: 36,
+            width: 85,
+            height: 42,
             decoration: BoxDecoration(
               color: tableColor,
-              borderRadius: BorderRadius.circular(2),
+              borderRadius: BorderRadius.circular(4),
             ),
-            child: Center(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.black87,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
                 ),
-              ),
+                if (subLabel != null)
+                  Text(
+                    subLabel,
+                    style: const TextStyle(
+                      fontSize: 8.5,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black54,
+                    ),
+                  ),
+              ],
             ),
           ),
         ],

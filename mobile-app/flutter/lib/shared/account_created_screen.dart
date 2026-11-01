@@ -115,7 +115,7 @@ class _AccountCreatedScreenState extends State<AccountCreatedScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'Continue to Login',
+                      'Continuing to Login',
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,

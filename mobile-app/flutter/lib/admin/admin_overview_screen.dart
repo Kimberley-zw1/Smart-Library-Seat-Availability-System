@@ -14,7 +14,7 @@ class AdminOverviewScreen extends StatefulWidget {
 }
 
 class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
-  int _currentIndex = 2; // Overview tab selected
+  final int _currentIndex = 2; // Overview tab selected
 
   void _onTabTapped(int index) {
     if (index == _currentIndex) return;

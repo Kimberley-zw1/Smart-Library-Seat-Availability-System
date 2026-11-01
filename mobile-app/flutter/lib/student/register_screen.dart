@@ -168,7 +168,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     width: 80,
                     height: 80,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFC01A32).withOpacity(0.08),
+                      color: const Color(0xFFC01A32).withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(

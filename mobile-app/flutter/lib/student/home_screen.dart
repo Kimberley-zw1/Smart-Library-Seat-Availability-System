@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -15,6 +17,154 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0; // Home selected
+  StreamSubscription<QuerySnapshot>? _notificationSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _startListeningToNotifications();
+  }
+
+  @override
+  void dispose() {
+    _notificationSubscription?.cancel();
+    super.dispose();
+  }
+
+  // Real-time listener for incoming notifications
+  void _startListeningToNotifications() {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    _notificationSubscription = FirebaseFirestore.instance
+        .collection('users')
+        .doc(currentUser.uid)
+        .collection('notifications')
+        .where('isRead', isEqualTo: false)
+        .snapshots()
+        .listen((snapshot) {
+          for (var change in snapshot.docChanges) {
+            if (change.type == DocumentChangeType.added) {
+              final data = change.doc.data() as Map<String, dynamic>?;
+              if (data == null) continue;
+
+              final String title = data['title'] ?? 'Library Alert';
+              final String message = data['message'] ?? '';
+              final String docId = change.doc.id;
+
+              // 1. Show the smooth in-app top banner
+              _showInAppBanner(title, message);
+
+              // 2. Mark as read in Firestore so it doesn't repeat
+              FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(currentUser.uid)
+                  .collection('notifications')
+                  .doc(docId)
+                  .update({'isRead': true});
+            }
+          }
+        });
+  }
+
+  // Beautiful sliding in-app banner alert
+  void _showInAppBanner(String title, String message) {
+    if (!mounted) return;
+
+    OverlayState? overlayState = Overlay.of(context);
+    late OverlayEntry overlayEntry;
+
+    overlayEntry = OverlayEntry(
+      builder: (context) => Positioned(
+        top: MediaQuery.of(context).padding.top + 10,
+        left: 20,
+        right: 20,
+        child: Material(
+          color: Colors.transparent,
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.0, end: 1.0),
+            duration: const Duration(milliseconds: 300),
+            builder: (context, value, child) {
+              return Transform.translate(
+                offset: Offset(0, (1 - value) * -60),
+                child: Opacity(
+                  opacity: value,
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: const Color(0xFFC01A32).withValues(alpha: 0.3),
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.12),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFFFF0F3),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.notifications_active_rounded,
+                            color: Color(0xFFC01A32),
+                            size: 22,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                message,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Color(0xFF6C757D),
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    overlayState.insert(overlayEntry);
+
+    // Automatically remove the banner after 3.5 seconds
+    Future.delayed(const Duration(milliseconds: 3500), () {
+      overlayEntry.remove();
+    });
+  }
 
   // Helper method to handle reservation cancellation with notification logging
   Future<void> _cancelReservation(String userId, String? seatNumber) async {
@@ -185,7 +335,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: primaryRed.withOpacity(0.05),
+                          color: primaryRed.withValues(alpha: 0.05),
                           blurRadius: 20,
                           offset: const Offset(0, 8),
                         ),
@@ -282,12 +432,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: primaryRed.withOpacity(0.3),
+                          color: primaryRed.withValues(alpha: 0.3),
                           width: 1.5,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: primaryRed.withOpacity(0.08),
+                            color: primaryRed.withValues(alpha: 0.08),
                             blurRadius: 16,
                             offset: const Offset(0, 6),
                           ),
@@ -626,7 +776,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: iconColor.withOpacity(0.15),
+                      color: iconColor.withValues(alpha: 0.15),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),

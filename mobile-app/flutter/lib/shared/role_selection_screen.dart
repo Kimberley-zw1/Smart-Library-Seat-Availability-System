@@ -31,7 +31,7 @@ class RoleSelectionScreen extends StatelessWidget {
                   width: 90,
                   height: 90,
                   decoration: BoxDecoration(
-                    color: primaryRed.withOpacity(0.1),
+                    color: primaryRed.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
@@ -46,7 +46,7 @@ class RoleSelectionScreen extends StatelessWidget {
 
               // Header Title
               const Text(
-                'Welcome to Smart Library',
+                'Welcome to Seatly',
                 style: TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.bold,

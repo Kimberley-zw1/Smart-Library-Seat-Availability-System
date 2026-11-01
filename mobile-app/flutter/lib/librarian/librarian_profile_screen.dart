@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../shared/general_login_screen.dart';
+
 class LibrarianProfileScreen extends StatefulWidget {
   final Function(int) onNavigateTab;
 
@@ -15,7 +17,12 @@ class _LibrarianProfileScreenState extends State<LibrarianProfileScreen> {
   Future<void> _handleLogout(BuildContext context) async {
     await FirebaseAuth.instance.signOut();
     if (!mounted) return;
-    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (context) => const GeneralLoginScreen(role: 'librarian'),
+      ),
+      (route) => false,
+    );
   }
 
   void _showChangePasswordDialog(BuildContext context) {

@@ -259,8 +259,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           onPressed: _isLoading ? null : _handlePasswordReset,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: primaryRed,
-                            disabledBackgroundColor: primaryRed.withOpacity(
-                              0.6,
+                            disabledBackgroundColor: primaryRed.withValues(
+                              alpha: 0.6,
                             ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),

@@ -224,7 +224,7 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
                                 (widget.isAvailable
                                         ? availableGreen
                                         : primaryRed)
-                                    .withOpacity(0.12),
+                                    .withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Row(
@@ -266,7 +266,7 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 13,
-                          color: primaryRed.withOpacity(0.85),
+                          color: primaryRed.withValues(alpha: 0.85),
                           fontWeight: FontWeight.w600,
                         ),
                       ),

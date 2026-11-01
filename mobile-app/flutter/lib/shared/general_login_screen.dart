@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart'; // (or check if package is in pubspec.yaml)
 
 import 'forgot_password_screen.dart';
 import '../shared/role_selection_screen.dart';
@@ -57,6 +58,27 @@ class _GeneralLoginScreenState extends State<GeneralLoginScreen> {
     }
   }
 
+  /// Requests notification permission and saves the FCM token to Firestore
+  Future<String?> _requestAndSaveFcmToken(String userId) async {
+    try {
+      FirebaseMessaging messaging = FirebaseMessaging.instance;
+      NotificationSettings settings = await messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
+      if (settings.authorizationStatus == AuthorizationStatus.authorized ||
+          settings.authorizationStatus == AuthorizationStatus.provisional) {
+        String? token = await messaging.getToken();
+        return token;
+      }
+    } catch (e) {
+      debugPrint('Error getting FCM token: $e');
+    }
+    return null;
+  }
+
   Future<void> _handleSubmit() async {
     final input = _emailOrIdentifierController.text.trim();
     final password = _passwordController.text.trim();
@@ -105,12 +127,16 @@ class _GeneralLoginScreenState extends State<GeneralLoginScreen> {
         if (user != null) {
           await user.updateDisplayName(fullName);
 
+          // Request notification permission and get FCM token
+          String? fcmToken = await _requestAndSaveFcmToken(user.uid);
+
           Map<String, dynamic> userData = {
             'uid': user.uid,
             'fullName': fullName,
             'email': user.email,
             'role': widget.role.toLowerCase(),
             'createdAt': FieldValue.serverTimestamp(),
+            'fcmToken': ?fcmToken,
           };
 
           if (_isStudent) {
@@ -156,6 +182,14 @@ class _GeneralLoginScreenState extends State<GeneralLoginScreen> {
 
         final uid = userCredential.user?.uid;
         if (uid == null) return;
+
+        // Optionally update FCM token on login as well
+        String? fcmToken = await _requestAndSaveFcmToken(uid);
+        if (fcmToken != null) {
+          await FirebaseFirestore.instance.collection('users').doc(uid).update({
+            'fcmToken': fcmToken,
+          });
+        }
 
         DocumentSnapshot userDoc = await FirebaseFirestore.instance
             .collection('users')
@@ -277,7 +311,7 @@ class _GeneralLoginScreenState extends State<GeneralLoginScreen> {
                   width: 90,
                   height: 90,
                   decoration: BoxDecoration(
-                    color: primaryRed.withOpacity(0.1),
+                    color: primaryRed.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(_roleIcon, size: 50, color: primaryRed),

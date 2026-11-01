@@ -5,6 +5,7 @@ import 'admin_profile_screen.dart';
 import 'admin_reports_screen.dart';
 import 'admin_overview_screen.dart';
 import 'admin_alerts_screen.dart';
+import 'admin_manage_users_screen.dart'; // Make sure this file exists
 
 class AdminHomeScreen extends StatefulWidget {
   const AdminHomeScreen({super.key});
@@ -14,7 +15,7 @@ class AdminHomeScreen extends StatefulWidget {
 }
 
 class _AdminHomeScreenState extends State<AdminHomeScreen> {
-  int _currentIndex = 0;
+  final int _currentIndex = 0;
 
   void _onTabTapped(int index) {
     if (index == _currentIndex) return;
@@ -60,12 +61,13 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     const primaryRed = Color(0xFFC01A32);
     const softPinkFill = Color(0xFFFFF0F2);
     const textSubColor = Color(0xFF8C919E);
+    const cardBgColor = Color(0xFFFAF8F8);
 
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -217,7 +219,64 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 },
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
+
+              // Quick Actions Section
+              const Text(
+                'Quick Actions',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 12),
+              GridView.count(
+                crossAxisCount: 2,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 1.6,
+                children: [
+                  _buildQuickActionCard(
+                    icon: Icons.group_rounded,
+                    iconColor: primaryRed,
+                    label: 'Manage Users',
+                    bgColor: cardBgColor,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => const AdminManageUsersScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildQuickActionCard(
+                    icon: Icons.bar_chart_rounded,
+                    iconColor: Colors.blue.shade600,
+                    label: 'Overview',
+                    bgColor: cardBgColor,
+                    onTap: () => _onTabTapped(2),
+                  ),
+                  _buildQuickActionCard(
+                    icon: Icons.notifications_active_rounded,
+                    iconColor: const Color(0xFFDCA134),
+                    label: 'Alerts',
+                    bgColor: cardBgColor,
+                    onTap: () => _onTabTapped(1),
+                  ),
+                  _buildQuickActionCard(
+                    icon: Icons.assessment_rounded,
+                    iconColor: Colors.purple.shade400,
+                    label: 'Reports',
+                    bgColor: cardBgColor,
+                    onTap: () => _onTabTapped(3),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 24),
 
               // Live Seat Map Overview Card (Real-time floors breakdown)
               StreamBuilder<QuerySnapshot>(
@@ -237,7 +296,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       final bool isOccupied =
                           data['isOccupied'] as bool? ?? false;
 
-                      // Categorize by floor name or seat ID convention (e.g., Ground / First)
                       final String floor = (data['floor'] ?? '')
                           .toString()
                           .toLowerCase();
@@ -381,13 +439,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: GestureDetector(
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const AdminAlertsScreen(),
-                            ),
-                          );
-                        },
+                        onTap: () => _onTabTapped(1),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: const [
@@ -445,6 +497,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.show_chart_rounded),
+              activeIcon: Icon(Icons.show_chart_rounded),
               label: 'Overview',
             ),
             BottomNavigationBarItem(
@@ -458,6 +511,42 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               label: 'Profile',
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickActionCard({
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+    required Color bgColor,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: bgColor,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 12.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 28, color: iconColor),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -16,7 +16,7 @@ class AdminProfileScreen extends StatefulWidget {
 }
 
 class _AdminProfileScreenState extends State<AdminProfileScreen> {
-  int _currentIndex = 4; // Profile tab selected
+  final int _currentIndex = 4; // Profile tab selected
 
   void _onTabTapped(int index) {
     if (index == _currentIndex) return;

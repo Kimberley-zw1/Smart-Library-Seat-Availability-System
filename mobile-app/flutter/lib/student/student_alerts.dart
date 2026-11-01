@@ -14,7 +14,7 @@ class StudentAlerts extends StatefulWidget {
 }
 
 class _StudentAlertsState extends State<StudentAlerts> {
-  int _currentIndex = 2; // Selected tab: Alerts
+  final int _currentIndex = 2; // Selected tab: Alerts
 
   String _formatTimestamp(Timestamp? timestamp) {
     if (timestamp == null) return 'Just now';
@@ -155,12 +155,12 @@ class _StudentAlertsState extends State<StudentAlerts> {
                               padding: const EdgeInsets.all(16.0),
                               decoration: BoxDecoration(
                                 color: isUnread
-                                    ? primaryRed.withOpacity(0.04)
+                                    ? primaryRed.withValues(alpha: 0.04)
                                     : const Color(0xFFF8F9FA),
                                 borderRadius: BorderRadius.circular(16),
                                 border: Border.all(
                                   color: isUnread
-                                      ? primaryRed.withOpacity(0.3)
+                                      ? primaryRed.withValues(alpha: 0.3)
                                       : const Color(0xFFE9ECEF),
                                   width: 1,
                                 ),
@@ -173,7 +173,7 @@ class _StudentAlertsState extends State<StudentAlerts> {
                                     padding: const EdgeInsets.all(10),
                                     decoration: BoxDecoration(
                                       color: isUnread
-                                          ? primaryRed.withOpacity(0.12)
+                                          ? primaryRed.withValues(alpha: 0.12)
                                           : const Color(0xFFE2E8F0),
                                       shape: BoxShape.circle,
                                     ),
@@ -197,16 +197,21 @@ class _StudentAlertsState extends State<StudentAlerts> {
                                           mainAxisAlignment:
                                               MainAxisAlignment.spaceBetween,
                                           children: [
-                                            Text(
-                                              title,
-                                              style: TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: isUnread
-                                                    ? FontWeight.bold
-                                                    : FontWeight.w600,
-                                                color: Colors.black87,
+                                            Expanded(
+                                              child: Text(
+                                                title,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 16,
+                                                  fontWeight: isUnread
+                                                      ? FontWeight.bold
+                                                      : FontWeight.w600,
+                                                  color: Colors.black87,
+                                                ),
                                               ),
                                             ),
+                                            const SizedBox(width: 8),
                                             Text(
                                               timeString,
                                               style: const TextStyle(
@@ -249,10 +254,6 @@ class _StudentAlertsState extends State<StudentAlerts> {
           currentIndex: _currentIndex,
           onTap: (index) {
             if (index == _currentIndex) return;
-
-            setState(() {
-              _currentIndex = index;
-            });
 
             switch (index) {
               case 0:

@@ -28,9 +28,7 @@ class _LibrarianHomeScreenState extends State<LibrarianHomeScreen> {
 
     final List<Widget> pages = [
       LibrarianDashboardView(onNavigateTab: _onTabTapped),
-      LibrarianOccupancyScreen(
-        onNavigateTab: _onTabTapped,
-      ), // Pass callback here
+      LibrarianOccupancyScreen(onNavigateTab: _onTabTapped),
       LibrarianAlertsScreen(onNavigateTab: _onTabTapped),
       LibrarianProfileScreen(onNavigateTab: _onTabTapped),
     ];
@@ -266,43 +264,57 @@ class LibrarianDashboardView extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-            Row(
+
+            // Quick Actions 2-in-a-row Grid
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 1.6,
               children: [
-                Expanded(
-                  child: _buildQuickActionCard(
-                    icon: Icons.bar_chart_rounded,
-                    iconColor: Colors.blue.shade600,
-                    label: 'View Occupancy',
-                    bgColor: cardBgColor,
-                    onTap: () => onNavigateTab(1),
-                  ),
+                _buildQuickActionCard(
+                  icon: Icons.chair_rounded,
+                  iconColor: primaryRed,
+                  label: 'Manage Seats',
+                  bgColor: cardBgColor,
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            const LibrarianManageSeatsScreen(),
+                      ),
+                    );
+                  },
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildQuickActionCard(
-                    icon: Icons.access_time_filled_rounded,
-                    iconColor: Colors.grey.shade600,
-                    label: 'Closing Check',
-                    bgColor: cardBgColor,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              const LibrarianClosingCheckScreen(),
-                        ),
-                      );
-                    },
-                  ),
+                _buildQuickActionCard(
+                  icon: Icons.bar_chart_rounded,
+                  iconColor: Colors.blue.shade600,
+                  label: 'View Occupancy',
+                  bgColor: cardBgColor,
+                  onTap: () => onNavigateTab(1),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildQuickActionCard(
-                    icon: Icons.notifications_active_rounded,
-                    iconColor: const Color(0xFFDCA134),
-                    label: 'Send Alert',
-                    bgColor: cardBgColor,
-                    onTap: () => onNavigateTab(2),
-                  ),
+                _buildQuickActionCard(
+                  icon: Icons.access_time_filled_rounded,
+                  iconColor: Colors.grey.shade600,
+                  label: 'Closing Check',
+                  bgColor: cardBgColor,
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            const LibrarianClosingCheckScreen(),
+                      ),
+                    );
+                  },
+                ),
+                _buildQuickActionCard(
+                  icon: Icons.notifications_active_rounded,
+                  iconColor: const Color(0xFFDCA134),
+                  label: 'Send Alert',
+                  bgColor: cardBgColor,
+                  onTap: () => onNavigateTab(2),
                 ),
               ],
             ),
@@ -350,12 +362,11 @@ class LibrarianDashboardView extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
         child: Container(
-          height: 105,
           padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 12.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 32, color: iconColor),
+              Icon(icon, size: 28, color: iconColor),
               const SizedBox(height: 8),
               Text(
                 label,
@@ -368,6 +379,365 @@ class LibrarianDashboardView extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// -------------------------------------------------------------
+// NEW: Librarian Manage Seats Screen
+// -------------------------------------------------------------
+class LibrarianManageSeatsScreen extends StatefulWidget {
+  const LibrarianManageSeatsScreen({super.key});
+
+  @override
+  State<LibrarianManageSeatsScreen> createState() =>
+      _LibrarianManageSeatsScreenState();
+}
+
+class _LibrarianManageSeatsScreenState
+    extends State<LibrarianManageSeatsScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  String _getFloorLabel(dynamic floorValue) {
+    if (floorValue == null) return 'Ground Floor';
+    final String str = floorValue.toString().trim();
+    if (str == '0') return 'Ground Floor';
+    if (str == '1') return 'First Floor';
+    if (str.toLowerCase().contains('first')) return 'First Floor';
+    if (str.toLowerCase().contains('ground')) return 'Ground Floor';
+    return str;
+  }
+
+  void _showSeatOptionsModal(BuildContext context, DocumentSnapshot seatDoc) {
+    const primaryRed = Color(0xFFC01A32);
+    final data = seatDoc.data() as Map<String, dynamic>;
+    final seatNumber = seatDoc.id.toUpperCase();
+    final bool isOutOfOrder = data['isOutOfOrder'] == true;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Manage Seat $seatNumber',
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Floor: ${_getFloorLabel(data['floor'])}\nStatus: ${isOutOfOrder ? "Out of Order" : (data['isOccupied'] == true ? "Occupied" : "Available")}',
+                style: const TextStyle(fontSize: 14, color: Color(0xFF7E8494)),
+              ),
+              const SizedBox(height: 24),
+              if (!isOutOfOrder)
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      await FirebaseFirestore.instance
+                          .collection('seats')
+                          .doc(seatDoc.id)
+                          .update({'isOutOfOrder': true});
+                      if (!mounted) return;
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Seat $seatNumber marked as Out of Order',
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.block_rounded, color: Colors.white),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryRed,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
+                    ),
+                    label: const Text(
+                      'Mark as Out of Order',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      await FirebaseFirestore.instance
+                          .collection('seats')
+                          .doc(seatDoc.id)
+                          .update({'isOutOfOrder': false});
+                      if (!mounted) return;
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Out of Order mark removed'),
+                        ),
+                      );
+                    },
+                    icon: const Icon(
+                      Icons.check_circle_outline_rounded,
+                      color: Colors.white,
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2EC4B6),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
+                    ),
+                    label: const Text(
+                      'Remove Out of Order Mark',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const primaryRed = Color(0xFFC01A32);
+    const cardBorderColor = Color(0xFFF0E4E5);
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_rounded,
+            color: primaryRed,
+            size: 26,
+          ),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text(
+          'Manage Seats',
+          style: TextStyle(
+            color: Colors.black87,
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+          ),
+        ),
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Search Bar
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 24.0,
+                vertical: 8.0,
+              ),
+              child: TextField(
+                controller: _searchController,
+                onChanged: (value) {
+                  setState(() {
+                    _searchQuery = value.trim().toLowerCase();
+                  });
+                },
+                decoration: InputDecoration(
+                  hintText: 'Search seat number (e.g. G-01)...',
+                  prefixIcon: const Icon(
+                    Icons.search_rounded,
+                    color: Color(0xFF7E8494),
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFFF9F9FB),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // Seats List Categorized by Floor
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('seats')
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                      child: CircularProgressIndicator(color: primaryRed),
+                    );
+                  }
+
+                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                    return const Center(
+                      child: Text(
+                        'No seats found in database.',
+                        style: TextStyle(color: Color(0xFF7E8494)),
+                      ),
+                    );
+                  }
+
+                  final docs = snapshot.data!.docs;
+
+                  // Filter by search query if any
+                  final filteredDocs = docs.where((doc) {
+                    final seatId = doc.id.toLowerCase();
+                    return seatId.contains(_searchQuery);
+                  }).toList();
+
+                  if (filteredDocs.isEmpty) {
+                    return const Center(
+                      child: Text(
+                        'No matching seats found.',
+                        style: TextStyle(color: Color(0xFF7E8494)),
+                      ),
+                    );
+                  }
+
+                  // Group by Floor
+                  Map<String, List<QueryDocumentSnapshot>> floorsMap = {};
+                  for (var doc in filteredDocs) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final floor = _getFloorLabel(data['floor']);
+                    if (!floorsMap.containsKey(floor)) {
+                      floorsMap[floor] = [];
+                    }
+                    floorsMap[floor]!.add(doc);
+                  }
+
+                  final floors = floorsMap.keys.toList()..sort();
+
+                  return ListView.builder(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24.0,
+                      vertical: 8.0,
+                    ),
+                    itemCount: floors.length,
+                    itemBuilder: (context, index) {
+                      final floorName = floors[index];
+                      final floorSeats = floorsMap[floorName]!;
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            child: Text(
+                              floorName,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: primaryRed,
+                              ),
+                            ),
+                          ),
+                          ...floorSeats.map((seatDoc) {
+                            final data = seatDoc.data() as Map<String, dynamic>;
+                            final seatNum = seatDoc.id.toUpperCase();
+                            final bool isOccupied = data['isOccupied'] == true;
+                            final bool isOutOfOrder =
+                                data['isOutOfOrder'] == true;
+
+                            Color statusColor = const Color(0xFF2EC4B6);
+                            String statusText = 'Available';
+
+                            if (isOutOfOrder) {
+                              statusColor = Colors.grey;
+                              statusText = 'Out of Order';
+                            } else if (isOccupied) {
+                              statusColor = primaryRed;
+                              statusText = 'Occupied';
+                            }
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: cardBorderColor,
+                                  width: 1.2,
+                                ),
+                              ),
+                              child: ListTile(
+                                onTap: () =>
+                                    _showSeatOptionsModal(context, seatDoc),
+                                leading: Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withValues(alpha: 0.1),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    Icons.chair_rounded,
+                                    color: statusColor,
+                                    size: 20,
+                                  ),
+                                ),
+                                title: Text(
+                                  'Seat $seatNum',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  'Status: $statusText',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: statusColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                trailing: const Icon(
+                                  Icons.arrow_forward_ios_rounded,
+                                  size: 16,
+                                  color: Color(0xFF7E8494),
+                                ),
+                              ),
+                            );
+                          }),
+                          const SizedBox(height: 12),
+                        ],
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );

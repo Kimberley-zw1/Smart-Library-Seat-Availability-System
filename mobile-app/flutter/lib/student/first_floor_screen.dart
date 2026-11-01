@@ -11,6 +11,7 @@ class FirstFloorScreen extends StatelessWidget {
     const primaryRed = Color(0xFFC01A32);
     const availableGreen = Color(0xFF2EC4B6);
     const tableColor = Color(0xFFE0BB95);
+    const outOfOrderGrey = Colors.grey;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -49,18 +50,18 @@ class FirstFloorScreen extends StatelessWidget {
 
             // Legend Header
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32.0),
+              padding: const EdgeInsets.symmetric(horizontal: 24.0),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Row(
                     children: const [
                       Icon(Icons.circle, color: availableGreen, size: 10),
-                      SizedBox(width: 6),
+                      SizedBox(width: 4),
                       Text(
                         'Available',
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 12,
                           color: Color(0xFF8C919E),
                           fontWeight: FontWeight.w500,
                         ),
@@ -70,11 +71,25 @@ class FirstFloorScreen extends StatelessWidget {
                   Row(
                     children: const [
                       Icon(Icons.circle, color: primaryRed, size: 10),
-                      SizedBox(width: 6),
+                      SizedBox(width: 4),
                       Text(
                         'Occupied',
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 12,
+                          color: Color(0xFF8C919E),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    children: const [
+                      Icon(Icons.circle, color: outOfOrderGrey, size: 10),
+                      SizedBox(width: 4),
+                      Text(
+                        'Out of Order',
+                        style: TextStyle(
+                          fontSize: 12,
                           color: Color(0xFF8C919E),
                           fontWeight: FontWeight.w500,
                         ),
@@ -113,20 +128,34 @@ class FirstFloorScreen extends StatelessWidget {
                   final docs = snapshot.data?.docs ?? [];
 
                   bool isF01Available = true; // Seat 3
+                  bool isF01OutOfOrder = false;
+
                   bool isF02Available = true; // Seat 4
+                  bool isF02OutOfOrder = false;
 
                   for (var doc in docs) {
                     final data = doc.data() as Map<String, dynamic>;
 
                     if (doc.id == 'F-01') {
                       final isOccupied = data['isOccupied'] ?? false;
-                      isF01Available = !isOccupied;
+                      isF01OutOfOrder = data['isOutOfOrder'] ?? false;
+                      isF01Available = !isOccupied && !isF01OutOfOrder;
                     }
                     if (doc.id == 'F-02') {
                       final isOccupied = data['isOccupied'] ?? false;
-                      isF02Available = !isOccupied;
+                      isF02OutOfOrder = data['isOutOfOrder'] ?? false;
+                      isF02Available = !isOccupied && !isF02OutOfOrder;
                     }
                   }
+
+                  // Determine colors based on Out of Order status
+                  Color f01IndicatorColor = isF01OutOfOrder
+                      ? outOfOrderGrey
+                      : (isF01Available ? availableGreen : primaryRed);
+
+                  Color f02IndicatorColor = isF02OutOfOrder
+                      ? outOfOrderGrey
+                      : (isF02Available ? availableGreen : primaryRed);
 
                   return Padding(
                     padding: const EdgeInsets.symmetric(
@@ -190,9 +219,8 @@ class FirstFloorScreen extends StatelessWidget {
                             left: 10,
                             child: _buildSeatBlock(
                               label: '4',
-                              indicatorColor: isF02Available
-                                  ? availableGreen
-                                  : primaryRed,
+                              subLabel: isF02OutOfOrder ? 'Out of Order' : null,
+                              indicatorColor: f02IndicatorColor,
                               tableColor: tableColor,
                               onTap: () {
                                 Navigator.of(context).push(
@@ -214,9 +242,8 @@ class FirstFloorScreen extends StatelessWidget {
                             left: 10,
                             child: _buildSeatBlock(
                               label: '3',
-                              indicatorColor: isF01Available
-                                  ? availableGreen
-                                  : primaryRed,
+                              subLabel: isF01OutOfOrder ? 'Out of Order' : null,
+                              indicatorColor: f01IndicatorColor,
                               tableColor: tableColor,
                               onTap: () {
                                 Navigator.of(context).push(
@@ -248,6 +275,7 @@ class FirstFloorScreen extends StatelessWidget {
 
   Widget _buildSeatBlock({
     required String label,
+    String? subLabel,
     required Color indicatorColor,
     required Color tableColor,
     required VoidCallback onTap,
@@ -266,21 +294,33 @@ class FirstFloorScreen extends StatelessWidget {
             ),
           ),
           Container(
-            width: 70,
-            height: 36,
+            width: 85,
+            height: 42,
             decoration: BoxDecoration(
               color: tableColor,
-              borderRadius: BorderRadius.circular(2),
+              borderRadius: BorderRadius.circular(4),
             ),
-            child: Center(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.black87,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
                 ),
-              ),
+                if (subLabel != null)
+                  Text(
+                    subLabel,
+                    style: const TextStyle(
+                      fontSize: 8.5,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black54,
+                    ),
+                  ),
+              ],
             ),
           ),
         ],
