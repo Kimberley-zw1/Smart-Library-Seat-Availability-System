@@ -1,0 +1,17 @@
+workflows:
+  ios-release:
+    name: iOS Release Build
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      xcode: latest
+    scripts:
+      - name: Set up flutter package dependencies
+        script: flutter pub get
+      - name: Install CocoaPods
+        script: |
+          cd ios && pod install
+      - name: Build iOS IPA
+        script: flutter build ipa --release --no-codesign
+    artifacts:
+      - build/ios/ipa/*.ipa
