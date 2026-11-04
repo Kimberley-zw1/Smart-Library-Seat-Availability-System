@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'reported_seat_builder.dart';
 import 'seat_detail_screen.dart';
 
 class FirstFloorScreen extends StatelessWidget {
@@ -10,6 +11,7 @@ class FirstFloorScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     const primaryRed = Color(0xFFC01A32);
     const availableGreen = Color(0xFF2EC4B6);
+    const reportedAmber = Color(0xFFDCA134);
     const tableColor = Color(0xFFE0BB95);
     const outOfOrderGrey = Colors.grey;
 
@@ -51,51 +53,15 @@ class FirstFloorScreen extends StatelessWidget {
             // Legend Header
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                spacing: 12,
+                runSpacing: 6,
                 children: [
-                  Row(
-                    children: const [
-                      Icon(Icons.circle, color: availableGreen, size: 10),
-                      SizedBox(width: 4),
-                      Text(
-                        'Available',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF8C919E),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: const [
-                      Icon(Icons.circle, color: primaryRed, size: 10),
-                      SizedBox(width: 4),
-                      Text(
-                        'Occupied',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF8C919E),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: const [
-                      Icon(Icons.circle, color: outOfOrderGrey, size: 10),
-                      SizedBox(width: 4),
-                      Text(
-                        'Out of Order',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF8C919E),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
+                  _legendItem(availableGreen, 'Available'),
+                  _legendItem(primaryRed, 'Occupied'),
+                  _legendItem(reportedAmber, 'Reported'),
+                  _legendItem(outOfOrderGrey, 'Out of Order'),
                 ],
               ),
             ),
@@ -148,12 +114,12 @@ class FirstFloorScreen extends StatelessWidget {
                     }
                   }
 
-                  // Determine colors based on Out of Order status
-                  Color f01IndicatorColor = isF01OutOfOrder
+                  // Base colors from the seat itself (out of order wins)
+                  Color f01BaseColor = isF01OutOfOrder
                       ? outOfOrderGrey
                       : (isF01Available ? availableGreen : primaryRed);
 
-                  Color f02IndicatorColor = isF02OutOfOrder
+                  Color f02BaseColor = isF02OutOfOrder
                       ? outOfOrderGrey
                       : (isF02Available ? availableGreen : primaryRed);
 
@@ -217,20 +183,32 @@ class FirstFloorScreen extends StatelessWidget {
                           Positioned(
                             top: 250,
                             left: 10,
-                            child: _buildSeatBlock(
-                              label: '4',
-                              subLabel: isF02OutOfOrder ? 'Out of Order' : null,
-                              indicatorColor: f02IndicatorColor,
-                              tableColor: tableColor,
-                              onTap: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (context) => SeatDetailScreen(
-                                      seatId: 'F-02',
-                                      floorName: 'First Floor',
-                                      isAvailable: isF02Available,
-                                    ),
-                                  ),
+                            child: ReportedSeatBuilder(
+                              seatId: 'F-02',
+                              builder: (context, isReported) {
+                                // Out of order wins over reported
+                                final bool showReported =
+                                    isReported && !isF02OutOfOrder;
+                                return _buildSeatBlock(
+                                  label: '4',
+                                  subLabel: isF02OutOfOrder
+                                      ? 'Out of Order'
+                                      : (showReported ? 'Reported' : null),
+                                  indicatorColor: showReported
+                                      ? reportedAmber
+                                      : f02BaseColor,
+                                  tableColor: tableColor,
+                                  onTap: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (context) => SeatDetailScreen(
+                                          seatId: 'F-02',
+                                          floorName: 'First Floor',
+                                          isAvailable: isF02Available,
+                                        ),
+                                      ),
+                                    );
+                                  },
                                 );
                               },
                             ),
@@ -240,20 +218,31 @@ class FirstFloorScreen extends StatelessWidget {
                           Positioned(
                             bottom: 80,
                             left: 10,
-                            child: _buildSeatBlock(
-                              label: '3',
-                              subLabel: isF01OutOfOrder ? 'Out of Order' : null,
-                              indicatorColor: f01IndicatorColor,
-                              tableColor: tableColor,
-                              onTap: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (context) => SeatDetailScreen(
-                                      seatId: 'F-01',
-                                      floorName: 'First Floor',
-                                      isAvailable: isF01Available,
-                                    ),
-                                  ),
+                            child: ReportedSeatBuilder(
+                              seatId: 'F-01',
+                              builder: (context, isReported) {
+                                final bool showReported =
+                                    isReported && !isF01OutOfOrder;
+                                return _buildSeatBlock(
+                                  label: '3',
+                                  subLabel: isF01OutOfOrder
+                                      ? 'Out of Order'
+                                      : (showReported ? 'Reported' : null),
+                                  indicatorColor: showReported
+                                      ? reportedAmber
+                                      : f01BaseColor,
+                                  tableColor: tableColor,
+                                  onTap: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (context) => SeatDetailScreen(
+                                          seatId: 'F-01',
+                                          floorName: 'First Floor',
+                                          isAvailable: isF01Available,
+                                        ),
+                                      ),
+                                    );
+                                  },
                                 );
                               },
                             ),
@@ -270,6 +259,24 @@ class FirstFloorScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _legendItem(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.circle, color: color, size: 10),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            color: Color(0xFF8C919E),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
     );
   }
 

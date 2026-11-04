@@ -26,10 +26,16 @@ class _FloorSelectionScreenState extends State<FloorSelectionScreen> {
         .push(MaterialPageRoute(builder: (context) => targetScreen));
   }
 
-  // Helper method to count available seats dynamically
+  // Helper method to count available seats dynamically.
+  // A seat is available when it is not occupied and has not been marked
+  // out of order by the librarian.
   int _countAvailableSeats(List<QueryDocumentSnapshot> docs) {
     return docs.where((doc) {
       final data = doc.data() as Map<String, dynamic>;
+
+      // Out-of-order seats can't be used, so they are never available
+      if (data['isOutOfOrder'] == true) return false;
+
       final dynamic statusValue = data['isOccupied'];
 
       if (statusValue is bool) {

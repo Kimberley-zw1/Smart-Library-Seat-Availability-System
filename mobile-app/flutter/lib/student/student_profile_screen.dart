@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'home_screen.dart';
 import 'floor_selection_screen.dart';
 import 'student_alerts.dart';
+import 'help_support_screen.dart';
 import '../shared/general_login_screen.dart';
 
 class StudentProfileScreen extends StatelessWidget {
@@ -249,22 +250,9 @@ class StudentProfileScreen extends StatelessWidget {
                       title: 'Help & Support',
                       icon: Icons.help_outline_rounded,
                       onTap: () {
-                        showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('Student Support'),
-                            content: const Text(
-                              'For library seat assistance, contact IT Services at africau.edu.',
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.of(context).pop(),
-                                child: const Text(
-                                  'OK',
-                                  style: TextStyle(color: primaryRed),
-                                ),
-                              ),
-                            ],
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => const HelpSupportScreen(),
                           ),
                         );
                       },

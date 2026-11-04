@@ -19,6 +19,11 @@ class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0; // Home selected
   StreamSubscription<QuerySnapshot>? _notificationSubscription;
 
+  // IDs of notifications already shown as a banner in this session.
+  // Notifications are NOT marked as read here; they become read when the
+  // student leaves the Alerts screen (see student_alerts.dart).
+  final Set<String> _bannerShownIds = {};
+
   @override
   void initState() {
     super.initState();
@@ -48,20 +53,23 @@ class _HomeScreenState extends State<HomeScreen> {
               final data = change.doc.data() as Map<String, dynamic>?;
               if (data == null) continue;
 
-              final String title = data['title'] ?? 'Library Alert';
-              final String message = data['message'] ?? '';
-              final String docId = change.doc.id;
+              // Skip anything already bannered in this session
+              if (!_bannerShownIds.add(change.doc.id)) continue;
 
-              // 1. Show the smooth in-app top banner
-              _showInAppBanner(title, message);
+              // Only banner fresh notifications. A null timestamp means the
+              // server timestamp is still pending, so it is brand new.
+              // The window is generous (10 min) so a skewed device clock
+              // doesn't cause the banner to be skipped.
+              final DateTime? ts = (data['timestamp'] as Timestamp?)?.toDate();
+              final bool isFresh =
+                  ts == null || DateTime.now().difference(ts).inMinutes < 10;
 
-              // 2. Mark as read in Firestore so it doesn't repeat
-              FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(currentUser.uid)
-                  .collection('notifications')
-                  .doc(docId)
-                  .update({'isRead': true});
+              if (isFresh) {
+                final String title =
+                    data['title']?.toString() ?? 'Library Alert';
+                final String message = data['message']?.toString() ?? '';
+                _showInAppBanner(title, message);
+              }
             }
           }
         });
@@ -71,7 +79,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _showInAppBanner(String title, String message) {
     if (!mounted) return;
 
-    OverlayState? overlayState = Overlay.of(context);
+    OverlayState overlayState = Overlay.of(context);
     late OverlayEntry overlayEntry;
 
     overlayEntry = OverlayEntry(
@@ -160,9 +168,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
     overlayState.insert(overlayEntry);
 
-    // Automatically remove the banner after 3.5 seconds
-    Future.delayed(const Duration(milliseconds: 3500), () {
-      overlayEntry.remove();
+    // Automatically remove the banner after 6 seconds
+    Future.delayed(const Duration(milliseconds: 6000), () {
+      if (overlayEntry.mounted) {
+        overlayEntry.remove();
+      }
     });
   }
 
@@ -185,7 +195,9 @@ class _HomeScreenState extends State<HomeScreen> {
         batch.set(seatRef, {'isOccupied': false}, SetOptions(merge: true));
       }
 
-      // 3. Add cancellation entry to user's notifications history subcollection
+      // 3. Add cancellation entry to user's notifications history subcollection.
+      // Marked as already read: the student triggered this themselves and
+      // already sees a snackbar, so no banner or unread highlight is needed.
       final notificationRef = FirebaseFirestore.instance
           .collection('users')
           .doc(userId)
@@ -198,7 +210,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ? 'Your reservation for seat $seatNumber has been cancelled.'
             : 'Your seat reservation has been cancelled.',
         'timestamp': FieldValue.serverTimestamp(),
-        'isRead': false,
+        'isRead': true,
       });
 
       await batch.commit();
@@ -219,6 +231,19 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     }
+  }
+
+  // Pushes a page and resets the bottom bar to Home when the student returns
+  void _openPage(Widget page) {
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (context) => page))
+        .then((_) {
+          if (mounted) {
+            setState(() {
+              _currentIndex = 0;
+            });
+          }
+        });
   }
 
   @override
@@ -312,11 +337,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     final docs = snapshot.data!.docs;
                     totalSeats = docs.length;
 
-                    // Seats are available if isOccupied is false
+                    // Seats are available if they are not occupied and have
+                    // not been marked out of order by the librarian
                     availableSeats = docs.where((doc) {
                       final data = doc.data() as Map<String, dynamic>;
                       final isOccupied = data['isOccupied'] as bool? ?? false;
-                      return !isOccupied;
+                      final isOutOfOrder = data['isOutOfOrder'] == true;
+                      return !isOccupied && !isOutOfOrder;
                     }).length;
                   }
 
@@ -642,13 +669,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       icon: Icons.menu_book_rounded,
                       iconColor: const Color(0xFF3B82F6),
                       bgColor: const Color(0xFFEFF6FF),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => const FloorSelectionScreen(),
-                          ),
-                        );
-                      },
+                      onTap: () => _openPage(const FloorSelectionScreen()),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -659,13 +680,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       icon: Icons.notifications_rounded,
                       iconColor: const Color(0xFFF59E0B),
                       bgColor: const Color(0xFFFFFBEB),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => const StudentAlerts(),
-                          ),
-                        );
-                      },
+                      onTap: () => _openPage(const StudentAlerts()),
                     ),
                   ),
                 ],
@@ -696,25 +711,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 // Already on Home
                 break;
               case 1:
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => const FloorSelectionScreen(),
-                  ),
-                );
+                _openPage(const FloorSelectionScreen());
                 break;
               case 2:
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => const StudentAlerts(),
-                  ),
-                );
+                _openPage(const StudentAlerts());
                 break;
               case 3:
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => const StudentProfileScreen(),
-                  ),
-                );
+                _openPage(const StudentProfileScreen());
                 break;
             }
           },

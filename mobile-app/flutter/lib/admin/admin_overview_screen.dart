@@ -5,6 +5,8 @@ import 'admin_home_screen.dart';
 import 'admin_alerts_screen.dart';
 import 'admin_reports_screen.dart';
 import 'admin_profile_screen.dart';
+import '../shared/report_service.dart';
+import '../shared/reservation_cleanup.dart';
 
 class AdminOverviewScreen extends StatefulWidget {
   const AdminOverviewScreen({super.key});
@@ -15,6 +17,21 @@ class AdminOverviewScreen extends StatefulWidget {
 
 class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
   final int _currentIndex = 2; // Overview tab selected
+
+  final ReportService _reports = ReportService();
+
+  // One date-bounded stream (last 8 weeks) feeds both the Peak Hours card and
+  // the weekly chart, instead of two listeners on the whole collection.
+  late final Stream<List<Booking>> _bookingStream = _reports.watch(
+    weeks: kReportWeeks,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    // Free any reservations left open past 10:15 PM so the numbers are right.
+    ReservationCleanup.run();
+  }
 
   void _onTabTapped(int index) {
     if (index == _currentIndex) return;
@@ -41,47 +58,6 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
 
     Navigator.of(context)
         .pushReplacement(MaterialPageRoute(builder: (context) => targetScreen));
-  }
-
-  // Helper method to compute dynamic peak hours window from student reservation history
-  String _calculatePeakHours(List<QueryDocumentSnapshot> reservationDocs) {
-    if (reservationDocs.isEmpty) return '10am–1pm';
-
-    Map<String, int> timeSlots = {
-      '8am–11am': 0,
-      '11am–2pm': 0,
-      '2pm–5pm': 0,
-      '5pm–8pm': 0,
-    };
-
-    for (var doc in reservationDocs) {
-      final data = doc.data() as Map<String, dynamic>;
-      final Timestamp? timestamp =
-          (data['reservedAt'] ?? data['timestamp']) as Timestamp?;
-      if (timestamp != null) {
-        int hour = timestamp.toDate().hour;
-        if (hour >= 8 && hour < 11) {
-          timeSlots['8am–11am'] = (timeSlots['8am–11am'] ?? 0) + 1;
-        } else if (hour >= 11 && hour < 14) {
-          timeSlots['11am–2pm'] = (timeSlots['11am–2pm'] ?? 0) + 1;
-        } else if (hour >= 14 && hour < 17) {
-          timeSlots['2pm–5pm'] = (timeSlots['2pm–5pm'] ?? 0) + 1;
-        } else if (hour >= 17 && hour < 20) {
-          timeSlots['5pm–8pm'] = (timeSlots['5pm–8pm'] ?? 0) + 1;
-        }
-      }
-    }
-
-    String peakSlot = '10am–1pm';
-    int maxCount = -1;
-    timeSlots.forEach((slot, count) {
-      if (count > maxCount) {
-        maxCount = count;
-        peakSlot = slot;
-      }
-    });
-
-    return maxCount <= 0 ? '10am–1pm' : peakSlot;
   }
 
   @override
@@ -131,230 +107,137 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
 
               const SizedBox(height: 24),
 
-              // Real-Time Metrics & Dynamic Peak Hours Stream Builders
-              StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('seats')
-                    .snapshots(),
-                builder: (context, seatSnapshot) {
-                  return StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance
-                        .collection('reservation_history')
-                        .snapshots(),
-                    builder: (context, reservationSnapshot) {
-                      int totalSeats = 0;
-                      int occupiedCount = 0;
-                      int groundTotal = 0;
-                      int groundOccupied = 0;
-                      int firstTotal = 0;
-                      int firstOccupied = 0;
+              StreamBuilder<List<Booking>>(
+                stream: _bookingStream,
+                builder: (context, bookingSnap) {
+                  final bookings = bookingSnap.data ?? const <Booking>[];
+                  final weeks = _reports.lastWeeks(bookings, kReportWeeks);
+                  final String peakHoursText = bookingSnap.hasError
+                      ? 'Unavailable'
+                      : (_reports.peakWindow(bookings) ?? 'No data yet');
 
-                      if (seatSnapshot.hasData && seatSnapshot.data != null) {
-                        final docs = seatSnapshot.data!.docs;
-                        totalSeats = docs.length;
+                  return Column(
+                    children: [
+                      // Live seat metrics
+                      StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('seats')
+                            .snapshots(),
+                        builder: (context, seatSnapshot) {
+                          int totalSeats = 0; // seats in service
+                          int occupiedCount = 0;
+                          int groundTotal = 0;
+                          int groundOccupied = 0;
+                          int firstTotal = 0;
+                          int firstOccupied = 0;
 
-                        for (var doc in docs) {
-                          final data = doc.data() as Map<String, dynamic>;
-                          final bool isOccupied =
-                              data['isOccupied'] as bool? ?? false;
-                          final seatId = doc.id.toUpperCase();
-                          final String floor = (data['floor'] ?? '')
-                              .toString()
-                              .toLowerCase();
+                          if (seatSnapshot.hasData &&
+                              seatSnapshot.data != null) {
+                            for (var doc in seatSnapshot.data!.docs) {
+                              final data = doc.data() as Map<String, dynamic>;
 
-                          if (isOccupied) occupiedCount++;
+                              // Broken seats are not usable capacity
+                              if (data['isOutOfOrder'] == true) continue;
 
-                          if (floor.contains('first') ||
-                              seatId.startsWith('F')) {
-                            firstTotal++;
-                            if (isOccupied) firstOccupied++;
-                          } else {
-                            groundTotal++;
-                            if (isOccupied) groundOccupied++;
-                          }
-                        }
-                      }
+                              final bool isOccupied =
+                                  data['isOccupied'] as bool? ?? false;
+                              final seatId = doc.id.toUpperCase();
+                              final String floor = (data['floor'] ?? '')
+                                  .toString()
+                                  .toLowerCase();
 
-                      if (totalSeats == 0) totalSeats = 4;
+                              totalSeats++;
+                              if (isOccupied) occupiedCount++;
 
-                      final int utilizationPercent =
-                          ((occupiedCount / totalSeats) * 100).round();
-                      final double groundRatio = groundTotal > 0
-                          ? groundOccupied / groundTotal
-                          : 0.0;
-                      final double firstRatio = firstTotal > 0
-                          ? firstOccupied / firstTotal
-                          : 0.0;
-                      final String busiestFloor = firstRatio > groundRatio
-                          ? 'First Floor'
-                          : 'Ground Floor';
-
-                      // Compute dynamic peak hours from permanent reservation history
-                      String peakHoursText = '10am–1pm';
-                      if (reservationSnapshot.hasData &&
-                          reservationSnapshot.data != null) {
-                        peakHoursText = _calculatePeakHours(
-                          reservationSnapshot.data!.docs,
-                        );
-                      }
-
-                      return Column(
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildMetricCard(
-                                  title: 'Utilization Rate',
-                                  value: '$utilizationPercent%',
-                                  icon: Icons.show_chart_rounded,
-                                  iconColor: primaryRed,
-                                  borderColor: cardBorderColor,
-                                ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: _buildMetricCard(
-                                  title: 'Peak Hours',
-                                  value: peakHoursText,
-                                  icon: Icons.access_time_filled_rounded,
-                                  iconColor: const Color(0xFF9E9E9E),
-                                  borderColor: cardBorderColor,
-                                  valueFontSize: 18,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildMetricCard(
-                                  title: 'Busiest Floor',
-                                  value: busiestFloor,
-                                  icon: Icons.account_balance_rounded,
-                                  iconColor: const Color(0xFF8B7E74),
-                                  borderColor: cardBorderColor,
-                                  valueFontSize: 18,
-                                ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: _buildMetricCard(
-                                  title: 'Total Seats',
-                                  value: '$totalSeats',
-                                  icon: Icons.chair_rounded,
-                                  iconColor: const Color(0xFFA0522D),
-                                  borderColor: cardBorderColor,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      );
-                    },
-                  );
-                },
-              ),
-
-              const SizedBox(height: 24),
-
-              // Weekly Usage Trend Card with Permanent History Stream & Numerical Y-Axis
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: cardBorderColor, width: 1.2),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Weekly Usage Trend',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Dynamic StreamBuilder feeding reservation history to the Line Chart
-                    StreamBuilder<QuerySnapshot>(
-                      stream: FirebaseFirestore.instance
-                          .collection('reservation_history')
-                          .snapshots(),
-                      builder: (context, snapshot) {
-                        List<double> weeklyData = [0, 0, 0, 0, 0, 0, 0];
-
-                        if (snapshot.hasData && snapshot.data != null) {
-                          List<int> counts = [0, 0, 0, 0, 0, 0, 0];
-                          for (var doc in snapshot.data!.docs) {
-                            final data = doc.data() as Map<String, dynamic>;
-                            final Timestamp? timestamp =
-                                (data['reservedAt'] ?? data['timestamp'])
-                                    as Timestamp?;
-                            if (timestamp != null) {
-                              DateTime dt = timestamp.toDate();
-                              int index = dt.weekday - 1; // 0 = Mon, 6 = Sun
-                              if (index >= 0 && index < 7) {
-                                counts[index]++;
+                              if (floor.contains('first') ||
+                                  seatId.startsWith('F')) {
+                                firstTotal++;
+                                if (isOccupied) firstOccupied++;
+                              } else {
+                                groundTotal++;
+                                if (isOccupied) groundOccupied++;
                               }
                             }
                           }
-                          weeklyData = counts.map((c) => c.toDouble()).toList();
-                        }
 
-                        return SizedBox(
-                          height: 150,
-                          width: double.infinity,
-                          child: CustomPaint(
-                            painter: TrendChartPainter(dataPoints: weeklyData),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 12),
+                          final int utilizationPercent = totalSeats == 0
+                              ? 0
+                              : ((occupiedCount / totalSeats) * 100).round();
+                          final double groundRatio = groundTotal > 0
+                              ? groundOccupied / groundTotal
+                              : 0.0;
+                          final double firstRatio = firstTotal > 0
+                              ? firstOccupied / firstTotal
+                              : 0.0;
+                          final String busiestFloor = firstRatio > groundRatio
+                              ? 'First Floor'
+                              : groundRatio > firstRatio
+                              ? 'Ground Floor'
+                              : 'Even';
 
-                    Padding(
-                      padding: const EdgeInsets.only(left: 36.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: const [
-                          Text(
-                            'Mon',
-                            style: TextStyle(fontSize: 12, color: textSubColor),
-                          ),
-                          Text(
-                            'Tue',
-                            style: TextStyle(fontSize: 12, color: textSubColor),
-                          ),
-                          Text(
-                            'Wed',
-                            style: TextStyle(fontSize: 12, color: textSubColor),
-                          ),
-                          Text(
-                            'Thu',
-                            style: TextStyle(fontSize: 12, color: textSubColor),
-                          ),
-                          Text(
-                            'Fri',
-                            style: TextStyle(fontSize: 12, color: textSubColor),
-                          ),
-                          Text(
-                            'Sat',
-                            style: TextStyle(fontSize: 12, color: textSubColor),
-                          ),
-                          Text(
-                            'Sun',
-                            style: TextStyle(fontSize: 12, color: textSubColor),
-                          ),
-                        ],
+                          return Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _buildMetricCard(
+                                      title: 'Utilization Rate',
+                                      value: '$utilizationPercent%',
+                                      icon: Icons.show_chart_rounded,
+                                      iconColor: primaryRed,
+                                      borderColor: cardBorderColor,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: _buildMetricCard(
+                                      title: 'Peak Hours',
+                                      value: peakHoursText,
+                                      icon: Icons.access_time_filled_rounded,
+                                      iconColor: const Color(0xFF9E9E9E),
+                                      borderColor: cardBorderColor,
+                                      valueFontSize: 18,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 14),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _buildMetricCard(
+                                      title: 'Busiest Floor',
+                                      value: busiestFloor,
+                                      icon: Icons.account_balance_rounded,
+                                      iconColor: const Color(0xFF8B7E74),
+                                      borderColor: cardBorderColor,
+                                      valueFontSize: 18,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: _buildMetricCard(
+                                      title: 'Seats In Service',
+                                      value: '$totalSeats',
+                                      icon: Icons.chair_rounded,
+                                      iconColor: const Color(0xFFA0522D),
+                                      borderColor: cardBorderColor,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          );
+                        },
                       ),
-                    ),
-                  ],
-                ),
+
+                      const SizedBox(height: 24),
+
+                      // Weekly bookings trend: last 8 weeks, comparable week to week
+                      _buildTrendCard(weeks, cardBorderColor, textSubColor),
+                    ],
+                  );
+                },
               ),
 
               const SizedBox(height: 20),
@@ -407,6 +290,78 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
     );
   }
 
+  Widget _buildTrendCard(
+    List<MapEntry<DateTime, int>> weeks,
+    Color borderColor,
+    Color textSubColor,
+  ) {
+    MapEntry<DateTime, int>? busiest;
+    for (final w in weeks) {
+      if (w.value > 0 && (busiest == null || w.value > busiest.value)) {
+        busiest = w;
+      }
+    }
+    final b = busiest;
+    final String caption = b == null
+        ? 'No bookings recorded in this period yet.'
+        : 'Busiest week: week of ${b.key.day}/${b.key.month} with ${b.value} bookings.';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor, width: 1.2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Weekly Bookings',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Last $kReportWeeks weeks, by week starting (day/month)',
+            style: TextStyle(fontSize: 12, color: textSubColor),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            height: 150,
+            width: double.infinity,
+            child: CustomPaint(
+              painter: TrendChartPainter(
+                dataPoints: weeks.map((e) => e.value.toDouble()).toList(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.only(left: 36.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: weeks
+                  .map(
+                    (e) => Text(
+                      '${e.key.day}/${e.key.month}',
+                      style: TextStyle(fontSize: 10, color: textSubColor),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(caption, style: TextStyle(fontSize: 13, color: textSubColor)),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMetricCard({
     required String title,
     required String value,
@@ -428,12 +383,14 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF8C919E),
-                  fontWeight: FontWeight.w500,
+              Flexible(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF8C919E),
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
               Icon(icon, size: 20, color: iconColor),
@@ -473,7 +430,7 @@ class TrendChartPainter extends CustomPainter {
     double usableWidth = size.width - leftPadding - rightPadding;
     double usableHeight = size.height - bottomPadding - topPadding;
 
-    if (dataPoints.isEmpty) return;
+    if (dataPoints.length < 2) return;
 
     double maxVal = dataPoints.reduce((a, b) => a > b ? a : b);
     if (maxVal < 5) maxVal = 5.0;

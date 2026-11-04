@@ -32,7 +32,15 @@ class _GeneralLoginScreenState extends State<GeneralLoginScreen> {
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
 
+  // Only students may register themselves from this screen. Librarian and
+  // admin accounts are NOT in this list: they are created by hand in the
+  // Firebase console (or by an existing admin).
+  static const Set<String> _selfRegistrationRoles = {'student'};
+
   bool get _isStudent => widget.role.toLowerCase() == 'student';
+
+  bool get _canSelfRegister =>
+      _selfRegistrationRoles.contains(widget.role.toLowerCase());
 
   String get _roleTitle {
     switch (widget.role.toLowerCase()) {
@@ -86,6 +94,15 @@ class _GeneralLoginScreenState extends State<GeneralLoginScreen> {
     final fullName = _fullNameController.text.trim();
     final studentId = _studentIdController.text.trim();
 
+    // Only students can self-register (librarian/admin accounts are admin-created)
+    if (_isSignUp && !_canSelfRegister) {
+      _showSnackBar(
+        '$_roleTitle accounts cannot be self-registered. '
+        'Please contact an administrator.',
+      );
+      return;
+    }
+
     // Validation
     if (input.isEmpty ||
         password.isEmpty ||
@@ -113,7 +130,12 @@ class _GeneralLoginScreenState extends State<GeneralLoginScreen> {
               .where('studentId', isEqualTo: studentId)
               .get();
 
-          if (existingCheck.docs.isNotEmpty) {
+          // Accounts flagged as deleted don't count as registered
+          final alreadyRegistered = existingCheck.docs.any(
+            (d) => d.data()['deleted'] != true,
+          );
+
+          if (alreadyRegistered) {
             _showSnackBar('This student ID is already registered.');
             setState(() => _isLoading = false);
             return;
@@ -148,8 +170,22 @@ class _GeneralLoginScreenState extends State<GeneralLoginScreen> {
               .doc(user.uid)
               .set(userData);
 
+          // Sign out so the user has to log in again after registering
+          await FirebaseAuth.instance.signOut();
+
           if (!mounted) return;
-          _routeToDashboard(widget.role.toLowerCase());
+          setState(() {
+            _isSignUp = false;
+            _emailOrIdentifierController.text = input; // keep their email
+            _passwordController.clear();
+            _confirmPasswordController.clear();
+            _fullNameController.clear();
+            _studentIdController.clear();
+          });
+          _showSnackBar(
+            'Account created successfully. Please log in.',
+            color: const Color(0xFF2EC4B6),
+          );
         }
       } else {
         // --- 2. LOG IN PROCESS ---
@@ -159,16 +195,20 @@ class _GeneralLoginScreenState extends State<GeneralLoginScreen> {
           final query = await FirebaseFirestore.instance
               .collection('users')
               .where('studentId', isEqualTo: input)
-              .limit(1)
               .get();
 
-          if (query.docs.isEmpty) {
+          // Ignore accounts flagged as deleted
+          final activeDocs = query.docs
+              .where((d) => d.data()['deleted'] != true)
+              .toList();
+
+          if (activeDocs.isEmpty) {
             _showSnackBar('No account found with this student ID.');
             setState(() => _isLoading = false);
             return;
           }
 
-          final userData = query.docs.first.data();
+          final userData = activeDocs.first.data();
           targetEmail = userData['email'] ?? '';
           if (targetEmail.isEmpty) {
             _showSnackBar('Associated email address not found.');
@@ -180,10 +220,50 @@ class _GeneralLoginScreenState extends State<GeneralLoginScreen> {
         UserCredential userCredential = await FirebaseAuth.instance
             .signInWithEmailAndPassword(email: targetEmail, password: password);
 
-        final uid = userCredential.user?.uid;
-        if (uid == null) return;
+        final user = userCredential.user;
+        final uid = user?.uid;
+        if (user == null || uid == null) return;
 
-        // Optionally update FCM token on login as well
+        DocumentSnapshot userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .get();
+
+        if (!userDoc.exists) {
+          await FirebaseAuth.instance.signOut();
+          _showSnackBar('User record not found in database.');
+          return;
+        }
+
+        final data = userDoc.data() as Map<String, dynamic>?;
+
+        // Account was removed by an admin
+        if (data?['deleted'] == true) {
+          try {
+            // A user is allowed to delete their own login
+            await user.delete();
+          } catch (_) {
+            // e.g. requires-recent-login: fall back to signing out
+          }
+          await FirebaseAuth.instance.signOut();
+          _showSnackBar('This account has been removed.');
+          return;
+        }
+
+        final String storedRole = (data?['role'] ?? 'student')
+            .toString()
+            .toLowerCase();
+
+        if (storedRole != widget.role.toLowerCase()) {
+          await FirebaseAuth.instance.signOut();
+          if (!mounted) return;
+          _showSnackBar(
+            'Access denied. This account is registered as a $storedRole, not a $_roleTitle.',
+          );
+          return;
+        }
+
+        // Update FCM token on login as well
         String? fcmToken = await _requestAndSaveFcmToken(uid);
         if (fcmToken != null) {
           await FirebaseFirestore.instance.collection('users').doc(uid).update({
@@ -191,31 +271,8 @@ class _GeneralLoginScreenState extends State<GeneralLoginScreen> {
           });
         }
 
-        DocumentSnapshot userDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .get();
-
-        if (userDoc.exists) {
-          final data = userDoc.data() as Map<String, dynamic>?;
-          final String storedRole = (data?['role'] ?? 'student')
-              .toString()
-              .toLowerCase();
-
-          if (storedRole != widget.role.toLowerCase()) {
-            await FirebaseAuth.instance.signOut();
-            if (!mounted) return;
-            _showSnackBar(
-              'Access denied. This account is registered as a $storedRole, not a $_roleTitle.',
-            );
-            return;
-          }
-
-          if (!mounted) return;
-          _routeToDashboard(storedRole);
-        } else {
-          _showSnackBar('User record not found in database.');
-        }
+        if (!mounted) return;
+        _routeToDashboard(storedRole);
       }
     } on FirebaseAuthException catch (e) {
       _showSnackBar(e.message ?? 'An authentication error occurred.');
@@ -245,13 +302,10 @@ class _GeneralLoginScreenState extends State<GeneralLoginScreen> {
         .pushReplacement(MaterialPageRoute(builder: (context) => destination));
   }
 
-  void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: const Color(0xFFC01A32),
-      ),
-    );
+  void _showSnackBar(String message, {Color color = const Color(0xFFC01A32)}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message), backgroundColor: color));
   }
 
   @override
@@ -506,31 +560,40 @@ class _GeneralLoginScreenState extends State<GeneralLoginScreen> {
 
               const SizedBox(height: 16),
 
-              // Toggle Sign In / Sign Up Mode
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    _isSignUp
-                        ? 'Already have an account? '
-                        : "Don't have an account? ",
-                  ),
-                  GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _isSignUp = !_isSignUp;
-                      });
-                    },
-                    child: Text(
-                      _isSignUp ? 'Log In' : 'Register',
-                      style: const TextStyle(
-                        color: primaryRed,
-                        fontWeight: FontWeight.bold,
+              // Toggle Sign In / Sign Up Mode (hidden for admins)
+              if (_canSelfRegister)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      _isSignUp
+                          ? 'Already have an account? '
+                          : "Don't have an account? ",
+                    ),
+                    GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _isSignUp = !_isSignUp;
+                        });
+                      },
+                      child: Text(
+                        _isSignUp ? 'Log In' : 'Register',
+                        style: const TextStyle(
+                          color: primaryRed,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                )
+              else
+                Text(
+                  '$_roleTitle accounts are created by an administrator.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 13, color: Colors.black54),
+                ),
+
+              const SizedBox(height: 24),
             ],
           ),
         ),

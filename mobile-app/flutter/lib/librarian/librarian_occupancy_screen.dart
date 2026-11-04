@@ -67,37 +67,52 @@ class LibrarianOccupancyScreen extends StatelessWidget {
 
               const SizedBox(height: 24),
 
-              // Live Occupancy Circle Card (Driven by Firestore 'seats' collection)
+              // Live Occupancy Circle Card (Driven by Firestore 'seats' collection).
+              // Out-of-order seats are shown separately and are NOT counted as
+              // occupied, available or part of the capacity.
               StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
                     .collection('seats')
                     .snapshots(),
                 builder: (context, snapshot) {
-                  int totalSeats = 0;
+                  int totalSeats = 0; // seats in service
                   int occupiedSeats = 0;
                   int groundTotal = 0;
                   int groundOccupied = 0;
                   int firstTotal = 0;
                   int firstOccupied = 0;
+                  int groundOutOfOrder = 0;
+                  int firstOutOfOrder = 0;
 
                   if (snapshot.hasData && snapshot.data != null) {
-                    final docs = snapshot.data!.docs;
-                    totalSeats = docs.length;
-
-                    for (var doc in docs) {
+                    for (var doc in snapshot.data!.docs) {
                       final data = doc.data() as Map<String, dynamic>;
                       final bool isOccupied =
                           data['isOccupied'] as bool? ?? false;
+                      final bool isOutOfOrder = data['isOutOfOrder'] == true;
                       final seatId = doc.id.toUpperCase();
                       final String floor = (data['floor'] ?? '')
                           .toString()
                           .toLowerCase();
 
+                      final bool isFirst =
+                          floor.contains('first') ||
+                          floor == '1' ||
+                          seatId.startsWith('F');
+
+                      if (isOutOfOrder) {
+                        if (isFirst) {
+                          firstOutOfOrder++;
+                        } else {
+                          groundOutOfOrder++;
+                        }
+                        continue;
+                      }
+
+                      totalSeats++;
                       if (isOccupied) occupiedSeats++;
 
-                      if (floor.contains('first') ||
-                          floor == '1' ||
-                          seatId.startsWith('F')) {
+                      if (isFirst) {
                         firstTotal++;
                         if (isOccupied) firstOccupied++;
                       } else {
@@ -107,12 +122,8 @@ class LibrarianOccupancyScreen extends StatelessWidget {
                     }
                   }
 
-                  // Fallbacks if empty
-                  if (totalSeats == 0) totalSeats = 4;
-                  if (groundTotal == 0 && firstTotal == 0) {
-                    groundTotal = 2;
-                    firstTotal = 2;
-                  }
+                  final int outOfOrderSeats =
+                      groundOutOfOrder + firstOutOfOrder;
 
                   int availableSeats = totalSeats - occupiedSeats;
                   if (availableSeats < 0) availableSeats = 0;
@@ -181,54 +192,37 @@ class LibrarianOccupancyScreen extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 28),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                            Wrap(
+                              alignment: WrapAlignment.center,
+                              spacing: 24,
+                              runSpacing: 10,
                               children: [
-                                Row(
-                                  children: [
-                                    Container(
-                                      width: 10,
-                                      height: 10,
-                                      decoration: const BoxDecoration(
-                                        color: primaryRed,
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      '$occupiedSeats Occupied',
-                                      style: const TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.black87,
-                                      ),
-                                    ),
-                                  ],
+                                _buildLegendItem(
+                                  color: primaryRed,
+                                  text: '$occupiedSeats Occupied',
                                 ),
-                                const SizedBox(width: 24),
-                                Row(
-                                  children: [
-                                    Container(
-                                      width: 10,
-                                      height: 10,
-                                      decoration: const BoxDecoration(
-                                        color: Color(0xFFE2E4EB),
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      '$availableSeats Available',
-                                      style: const TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.black87,
-                                      ),
-                                    ),
-                                  ],
+                                _buildLegendItem(
+                                  color: const Color(0xFFE2E4EB),
+                                  text: '$availableSeats Available',
                                 ),
+                                if (outOfOrderSeats > 0)
+                                  _buildLegendItem(
+                                    color: Colors.grey,
+                                    text: '$outOfOrderSeats Out of Order',
+                                  ),
                               ],
                             ),
+                            if (outOfOrderSeats > 0) ...[
+                              const SizedBox(height: 12),
+                              const Text(
+                                'Out-of-order seats are not counted in the percentage.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: textSubColor,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -254,7 +248,10 @@ class LibrarianOccupancyScreen extends StatelessWidget {
                       _buildFloorCard(
                         title: 'Ground Floor',
                         subtitle:
-                            '$groundOccupied occupied / $groundTotal total',
+                            '$groundOccupied occupied / $groundTotal in service',
+                        note: groundOutOfOrder > 0
+                            ? '$groundOutOfOrder out of order'
+                            : null,
                         availabilityText: '$groundAvailable available',
                         availabilityColor: availableGreen,
                         borderColor: cardBorderColor,
@@ -265,7 +262,11 @@ class LibrarianOccupancyScreen extends StatelessWidget {
                       // First Floor Card
                       _buildFloorCard(
                         title: 'First Floor',
-                        subtitle: '$firstOccupied occupied / $firstTotal total',
+                        subtitle:
+                            '$firstOccupied occupied / $firstTotal in service',
+                        note: firstOutOfOrder > 0
+                            ? '$firstOutOfOrder out of order'
+                            : null,
                         availabilityText: '$firstAvailable available',
                         availabilityColor: availableGreen,
                         borderColor: cardBorderColor,
@@ -283,9 +284,32 @@ class LibrarianOccupancyScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildLegendItem({required Color color, required String text}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          text,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildFloorCard({
     required String title,
     required String subtitle,
+    String? note,
     required String availabilityText,
     required Color availabilityColor,
     required Color borderColor,
@@ -302,28 +326,52 @@ class LibrarianOccupancyScreen extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF7E8494),
-                  fontWeight: FontWeight.w400,
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF7E8494),
+                    fontWeight: FontWeight.w400,
+                  ),
                 ),
-              ),
-            ],
+                if (note != null) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.block_rounded,
+                        size: 14,
+                        color: Colors.grey,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        note,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.grey,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
           ),
+          const SizedBox(width: 12),
           Text(
             availabilityText,
             style: TextStyle(

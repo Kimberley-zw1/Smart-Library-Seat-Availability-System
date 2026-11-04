@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:libseat2/shared/activity_logger.dart';
+
+import 'admin_add_staff_screen.dart';
 
 class AdminManageUsersScreen extends StatefulWidget {
   const AdminManageUsersScreen({super.key});
@@ -14,25 +17,79 @@ class _AdminManageUsersScreenState extends State<AdminManageUsersScreen> {
   String _searchQuery = '';
   String _selectedFilter = 'All'; // 'All', 'Student', 'Librarian'
 
-  Future<void> _logUserDeletion({
-    required String targetUserName,
-    required String targetUserEmail,
-    required String targetRole,
-  }) async {
-    try {
-      final adminUser = FirebaseAuth.instance.currentUser;
-      final adminName = adminUser?.displayName ?? 'Admin';
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
-      await FirebaseFirestore.instance.collection('admin_alerts').add({
-        'title': 'User Account Removed',
-        'description':
-            'Admin ($adminName) deleted $targetRole account: $targetUserName ($targetUserEmail)',
-        'type': 'deletion',
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-    } catch (e) {
-      debugPrint('Error writing deletion audit log: $e');
+  // Flags the account as deleted, frees their seat, cancels their reservation
+  // and records who did it, all in ONE atomic batch (so there can never be a
+  // removal without an audit entry, or an audit entry without a removal).
+  // The app blocks flagged users, and their Firebase login is removed later
+  // (automatically on their next app open, by the cleanup script, or by hand
+  // in the Firebase console).
+  Future<void> _removeUser({
+    required String userId,
+    required String fullName,
+    required String email,
+    required String role,
+  }) async {
+    final db = FirebaseFirestore.instance;
+    final actor = await StaffActor.current(role: 'admin');
+    final batch = db.batch();
+
+    // Free their seat and remove their active reservation
+    final resRef = db.collection('reservations').doc(userId);
+    final res = await resRef.get();
+    if (res.exists) {
+      final resData = res.data() ?? <String, dynamic>{};
+      final seat = resData['seatNumber']?.toString();
+      if (seat != null && seat.isNotEmpty) {
+        batch.set(db.collection('seats').doc(seat), {
+          'isOccupied': false,
+        }, SetOptions(merge: true));
+      }
+
+      // Close the history record so reports can work out the stay length
+      final historyId = (resData['historyId'] ?? '').toString();
+      if (historyId.isNotEmpty) {
+        batch.update(db.collection('reservation_history').doc(historyId), {
+          'releasedAt': FieldValue.serverTimestamp(),
+          'releasedBy': 'admin',
+        });
+      }
+
+      batch.delete(resRef);
     }
+
+    // Flag the account instead of hard-deleting it
+    batch.update(db.collection('users').doc(userId), {
+      'deleted': true,
+      'deletedAt': FieldValue.serverTimestamp(),
+    });
+
+    // Audit entry shown in Alerts & History (admin and librarian), labelled
+    // with the admin who did it
+    final String summary = 'Deleted $role account: $fullName ($email)';
+    batch.set(db.collection('admin_alerts').doc(), {
+      'title': 'User Account Removed',
+      'subtitle': summary, // read by LibrarianAlertsScreen
+      'description': summary,
+      'type': 'deletion',
+      ...actor.toFields(),
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+
+    // Shared staff activity feed
+    ActivityLogger.addToBatch(
+      batch,
+      actor: actor,
+      action: 'user_removed',
+      details: summary,
+    );
+
+    await batch.commit();
   }
 
   void _showUserOptionsModal(BuildContext context, DocumentSnapshot userDoc) {
@@ -103,7 +160,8 @@ class _AdminManageUsersScreenState extends State<AdminManageUsersScreen> {
                       builder: (ctx) => AlertDialog(
                         title: const Text('Delete User'),
                         content: Text(
-                          'Are you sure you want to remove $fullName?',
+                          'Are you sure you want to remove $fullName? '
+                          'They will no longer be able to use the app.',
                         ),
                         actions: [
                           TextButton(
@@ -122,26 +180,46 @@ class _AdminManageUsersScreenState extends State<AdminManageUsersScreen> {
                     );
 
                     if (confirm == true) {
-                      // 1. Delete user from Firestore
-                      await FirebaseFirestore.instance
-                          .collection('users')
-                          .doc(userId)
-                          .delete();
+                      if (userId == FirebaseAuth.instance.currentUser?.uid) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'You cannot delete your own account.',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
 
-                      // 2. Automatically write deletion event to admin_alerts history
-                      await _logUserDeletion(
-                        targetUserName: fullName,
-                        targetUserEmail: email,
-                        targetRole: role.toUpperCase(),
-                      );
+                      try {
+                        // Flag the account, free seat, cancel reservation,
+                        // and log who did it, all in one go
+                        await _removeUser(
+                          userId: userId,
+                          fullName: fullName,
+                          email: email,
+                          role: role.toUpperCase(),
+                        );
 
-                      if (!mounted) return;
-                      Navigator.pop(context); // close bottom sheet
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('User deleted and logged successfully'),
-                        ),
-                      );
+                        if (!mounted) return;
+                        Navigator.pop(context); // close bottom sheet
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'User removed and logged successfully',
+                            ),
+                          ),
+                        );
+                      } catch (e) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Failed to delete user: $e'),
+                            backgroundColor: primaryRed,
+                          ),
+                        );
+                      }
                     }
                   },
                   icon: const Icon(
@@ -231,6 +309,84 @@ class _AdminManageUsersScreenState extends State<AdminManageUsersScreen> {
               ),
             ),
 
+            // Add Librarian / Add Admin buttons
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 24.0,
+                vertical: 6.0,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                const AdminAddStaffScreen(role: 'librarian'),
+                          ),
+                        );
+                      },
+                      icon: const Icon(
+                        Icons.person_add_alt_1_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      label: const Text(
+                        'Add Librarian',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryRed,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                const AdminAddStaffScreen(role: 'admin'),
+                          ),
+                        );
+                      },
+                      icon: const Icon(
+                        Icons.admin_panel_settings_rounded,
+                        color: primaryRed,
+                        size: 20,
+                      ),
+                      label: const Text(
+                        'Add Admin',
+                        style: TextStyle(
+                          color: primaryRed,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: primaryRed, width: 1.2),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
             // Role Filter Chips
             Padding(
               padding: const EdgeInsets.symmetric(
@@ -288,9 +444,13 @@ class _AdminManageUsersScreenState extends State<AdminManageUsersScreen> {
 
                   final docs = snapshot.data!.docs;
 
-                  // Filter by Search Query and Role Filter
+                  // Filter by deleted flag, Search Query and Role Filter
                   final filteredDocs = docs.where((doc) {
                     final data = doc.data() as Map<String, dynamic>;
+
+                    // Hide accounts that have been flagged as deleted
+                    if (data['deleted'] == true) return false;
+
                     final name = (data['fullName'] ?? data['name'] ?? '')
                         .toString()
                         .toLowerCase();
@@ -345,7 +505,7 @@ class _AdminManageUsersScreenState extends State<AdminManageUsersScreen> {
                       final String role =
                           data['role']?.toString().toUpperCase() ?? 'STUDENT';
                       final String idNum =
-                          data['studentId'] ?? data['id'] ?? 'N/A';
+                          (data['studentId'] ?? data['id'] ?? 'N/A').toString();
 
                       bool isLibrarian = role == 'LIBRARIAN';
 

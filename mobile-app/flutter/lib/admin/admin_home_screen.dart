@@ -6,6 +6,7 @@ import 'admin_reports_screen.dart';
 import 'admin_overview_screen.dart';
 import 'admin_alerts_screen.dart';
 import 'admin_manage_users_screen.dart'; // Make sure this file exists
+import '../shared/reservation_cleanup.dart';
 
 class AdminHomeScreen extends StatefulWidget {
   const AdminHomeScreen({super.key});
@@ -16,6 +17,14 @@ class AdminHomeScreen extends StatefulWidget {
 
 class _AdminHomeScreenState extends State<AdminHomeScreen> {
   final int _currentIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Free any reservations left open past 10:15 PM so the dashboard
+    // numbers are correct as soon as an admin opens the app.
+    ReservationCleanup.run();
+  }
 
   void _onTabTapped(int index) {
     if (index == _currentIndex) return;
@@ -94,21 +103,28 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
               const SizedBox(height: 24),
 
-              // Total Seats Card (Real-time from 'seats')
+              // Total Seats Card (Real-time from 'seats').
+              // Out-of-order seats are not counted as usable seats.
               StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
                     .collection('seats')
                     .snapshots(),
                 builder: (context, snapshot) {
-                  int totalSeats = 0;
+                  int totalSeats = 0; // seats in service
                   int occupiedCount = 0;
                   int availableCount = 0;
+                  int outOfOrderCount = 0;
 
                   if (snapshot.hasData && snapshot.data != null) {
-                    final docs = snapshot.data!.docs;
-                    totalSeats = docs.length;
-                    for (var doc in docs) {
+                    for (var doc in snapshot.data!.docs) {
                       final data = doc.data() as Map<String, dynamic>;
+
+                      if (data['isOutOfOrder'] == true) {
+                        outOfOrderCount++;
+                        continue;
+                      }
+
+                      totalSeats++;
                       final bool isOccupied =
                           data['isOccupied'] as bool? ?? false;
                       if (isOccupied) {
@@ -133,7 +149,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              'Total Seats: ${totalSeats == 0 ? 4 : totalSeats}',
+                              'Total Seats: $totalSeats',
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -213,6 +229,16 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                             ),
                           ],
                         ),
+                        if (outOfOrderCount > 0) ...[
+                          const SizedBox(height: 10),
+                          Text(
+                            '$outOfOrderCount out of order (not counted above)',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: textSubColor,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   );
@@ -292,6 +318,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   if (snapshot.hasData && snapshot.data != null) {
                     for (var doc in snapshot.data!.docs) {
                       final data = doc.data() as Map<String, dynamic>;
+
+                      // Broken seats are not usable capacity
+                      if (data['isOutOfOrder'] == true) continue;
+
                       final seatId = doc.id.toUpperCase();
                       final bool isOccupied =
                           data['isOccupied'] as bool? ?? false;
@@ -307,11 +337,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                         if (isOccupied) groundOccupied++;
                       }
                     }
-                  }
-
-                  if (groundTotal == 0 && firstTotal == 0) {
-                    groundTotal = 2;
-                    firstTotal = 2;
                   }
 
                   final double groundProgress = groundTotal > 0

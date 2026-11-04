@@ -16,6 +16,38 @@ class StudentAlerts extends StatefulWidget {
 class _StudentAlertsState extends State<StudentAlerts> {
   final int _currentIndex = 2; // Selected tab: Alerts
 
+  @override
+  void dispose() {
+    // Mark everything as read when the student leaves, so the unread
+    // highlights stay visible for the whole visit.
+    _markAllRead();
+    super.dispose();
+  }
+
+  Future<void> _markAllRead() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      final unread = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('notifications')
+          .where('isRead', isEqualTo: false)
+          .get();
+
+      if (unread.docs.isEmpty) return;
+
+      final batch = FirebaseFirestore.instance.batch();
+      for (final d in unread.docs) {
+        batch.update(d.reference, {'isRead': true});
+      }
+      await batch.commit();
+    } catch (_) {
+      // Non-critical: ignore failures marking notifications as read
+    }
+  }
+
   String _formatTimestamp(Timestamp? timestamp) {
     if (timestamp == null) return 'Just now';
     final DateTime dateTime = timestamp.toDate();
@@ -142,8 +174,10 @@ class _StudentAlertsState extends State<StudentAlerts> {
                             final alertData =
                                 docs[index].data() as Map<String, dynamic>;
                             final String title =
-                                alertData['title'] ?? 'Notification';
-                            final String message = alertData['message'] ?? '';
+                                alertData['title']?.toString() ??
+                                'Notification';
+                            final String message =
+                                alertData['message']?.toString() ?? '';
                             final bool isUnread = alertData['isRead'] == false;
                             final Timestamp? timestamp =
                                 alertData['timestamp'] as Timestamp?;

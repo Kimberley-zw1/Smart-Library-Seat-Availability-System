@@ -75,6 +75,7 @@ class _SplashScreenState extends State<SplashScreen>
 
                   // Book Graphic / Icon
                   // Replace this Icon with Image.asset('assets/book.png') if you have the asset file
+                  // Book Graphic / Icon
                   Container(
                     width: 110,
                     height: 110,
@@ -82,10 +83,12 @@ class _SplashScreenState extends State<SplashScreen>
                       color: Colors.blue.shade50,
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: Icon(
-                      Icons.menu_book_rounded,
-                      size: 70,
-                      color: Colors.blue.shade600,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Image.asset(
+                        'assets/images/newicon.jpg',
+                        fit: BoxFit.cover,
+                      ),
                     ),
                   ),
 
@@ -93,7 +96,7 @@ class _SplashScreenState extends State<SplashScreen>
 
                   // App Title
                   const Text(
-                    'Smart Library',
+                    'Seatly',
                     style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
@@ -106,7 +109,7 @@ class _SplashScreenState extends State<SplashScreen>
 
                   // Subtitle / Tagline
                   const Text(
-                    'Find. Study. Achieve',
+                    'Find. Book. Sit.',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w500,

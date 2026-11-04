@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:libseat2/shared/activity_logger.dart';
+import 'package:libseat2/shared/reservation_cleanup.dart';
 
 import 'librarian_occupancy_screen.dart';
 import 'librarian_alerts_screen.dart';
@@ -15,6 +17,14 @@ class LibrarianHomeScreen extends StatefulWidget {
 
 class _LibrarianHomeScreenState extends State<LibrarianHomeScreen> {
   int _currentIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Free any reservations left open past 10:15 PM so the live seat
+    // numbers are correct as soon as a librarian opens the app.
+    ReservationCleanup.run();
+  }
 
   void _onTabTapped(int index) {
     setState(() {
@@ -124,27 +134,36 @@ class LibrarianDashboardView extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Hello, $librarianName 👋',
-                          style: const TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
+                    // Expanded gives the name the space left beside the pill;
+                    // FittedBox shrinks it slightly only if it doesn't fit.
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'Hello, $librarianName 👋',
+                              style: const TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Main Library Overview',
-                          style: TextStyle(
-                            fontSize: 15,
-                            color: Color(0xFF7E8494),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Main Library Overview',
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: Color(0xFF7E8494),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
+                    const SizedBox(width: 12),
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
@@ -177,25 +196,32 @@ class LibrarianDashboardView extends StatelessWidget {
 
             const SizedBox(height: 28),
 
+            // Live seat card. Out-of-order seats are listed separately and are
+            // not counted as occupied, available or part of the capacity.
             StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('seats')
                   .snapshots(),
               builder: (context, snapshot) {
-                int totalCapacity = 0;
+                int totalCapacity = 0; // seats in service
                 int occupiedCount = 0;
+                final List<String> outOfOrderSeats = [];
 
                 if (snapshot.hasData && snapshot.data != null) {
-                  final docs = snapshot.data!.docs;
-                  totalCapacity = docs.length;
-
-                  for (var doc in docs) {
+                  for (var doc in snapshot.data!.docs) {
                     final data = doc.data() as Map<String, dynamic>;
+
+                    if (data['isOutOfOrder'] == true) {
+                      outOfOrderSeats.add(doc.id.toUpperCase());
+                      continue;
+                    }
+
+                    totalCapacity++;
                     if (data['isOccupied'] == true) occupiedCount++;
                   }
                 }
+                outOfOrderSeats.sort();
 
-                if (totalCapacity == 0) totalCapacity = 4;
                 int availableCount = totalCapacity - occupiedCount;
                 if (availableCount < 0) availableCount = 0;
 
@@ -248,6 +274,44 @@ class LibrarianDashboardView extends StatelessWidget {
                           ),
                         ],
                       ),
+                      if (outOfOrderSeats.isNotEmpty) ...[
+                        const SizedBox(height: 20),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFE0E0E0)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.block_rounded,
+                                size: 18,
+                                color: Colors.grey,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Out of order (${outOfOrderSeats.length}): '
+                                  '${outOfOrderSeats.join(', ')}. '
+                                  'Not counted above.',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: Color(0xFF5F6472),
+                                    height: 1.3,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 );
@@ -386,7 +450,7 @@ class LibrarianDashboardView extends StatelessWidget {
 }
 
 // -------------------------------------------------------------
-// NEW: Librarian Manage Seats Screen
+// Librarian Manage Seats Screen
 // -------------------------------------------------------------
 class LibrarianManageSeatsScreen extends StatefulWidget {
   const LibrarianManageSeatsScreen({super.key});
@@ -401,6 +465,12 @@ class _LibrarianManageSeatsScreenState
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   String _getFloorLabel(dynamic floorValue) {
     if (floorValue == null) return 'Ground Floor';
     final String str = floorValue.toString().trim();
@@ -411,117 +481,328 @@ class _LibrarianManageSeatsScreenState
     return str;
   }
 
+  // Looks up the reservation (if any) for this seat.
+  Stream<QuerySnapshot> _reservationStream(String seatId) {
+    return FirebaseFirestore.instance
+        .collection('reservations')
+        .where('seatNumber', isEqualTo: seatId)
+        .limit(1)
+        .snapshots();
+  }
+
+  // Marks a seat out of order (or back in service) and records which
+  // librarian did it, in the same atomic batch.
+  Future<void> _setOutOfOrder(DocumentSnapshot seatDoc, bool value) async {
+    final db = FirebaseFirestore.instance;
+    final actor = await StaffActor.current(role: 'librarian');
+    final String seatLabel = seatDoc.id.toUpperCase();
+
+    final batch = db.batch();
+    batch.update(seatDoc.reference, {'isOutOfOrder': value});
+
+    // Returning a seat to service also closes any open student report for it,
+    // so the report can't keep blocking reservations.
+    if (!value) {
+      final alertRef = db
+          .collection('admin_alerts')
+          .doc('report_${seatDoc.id}');
+      final alertSnap = await alertRef.get();
+      if (alertSnap.exists && alertSnap.data()?['resolved'] != true) {
+        batch.update(alertRef, {
+          'resolved': true,
+          'resolvedAt': FieldValue.serverTimestamp(),
+          'resolvedByUid': actor.uid,
+          'resolvedByName': actor.name,
+          'resolvedByRole': actor.role,
+        });
+      }
+    }
+
+    ActivityLogger.addToBatch(
+      batch,
+      actor: actor,
+      action: value ? 'seat_marked_out_of_order' : 'seat_out_of_order_cleared',
+      seatId: seatLabel,
+      details: value
+          ? 'Seat $seatLabel marked out of order'
+          : 'Seat $seatLabel returned to service',
+    );
+    await batch.commit();
+  }
+
+  // Frees the seat; if a student holds a reservation, deletes it and
+  // sends them a notification, all in one atomic batch. Every release is
+  // labelled with the librarian who did it.
+  Future<void> _releaseSeat({
+    required DocumentSnapshot seatDoc,
+    QueryDocumentSnapshot? reservationDoc,
+    required String notifTitle,
+    required String notifMessage,
+    String actionType = 'cancelled', // 'cancelled' or 'released'
+  }) async {
+    final db = FirebaseFirestore.instance;
+    final batch = db.batch();
+    final currentLibrarian = FirebaseAuth.instance.currentUser;
+    final actor = await StaffActor.current(role: 'librarian');
+    final String seatLabel = seatDoc.id.toUpperCase();
+
+    // 1. Mark the seat available
+    batch.set(seatDoc.reference, {
+      'isOccupied': false,
+    }, SetOptions(merge: true));
+
+    if (reservationDoc != null) {
+      final resData = reservationDoc.data() as Map<String, dynamic>;
+      // Reservation doc ID is the student's uid (see home_screen.dart)
+      final String studentUid = (resData['userId'] ?? reservationDoc.id)
+          .toString();
+
+      // 2. Delete the reservation
+      batch.delete(reservationDoc.reference);
+
+      // 2b. Close the reservation_history record so reports can work out
+      // how long the student stayed.
+      final String historyId = (resData['historyId'] ?? '').toString();
+      if (historyId.isNotEmpty) {
+        batch.update(db.collection('reservation_history').doc(historyId), {
+          'releasedAt': FieldValue.serverTimestamp(),
+          'releasedBy': 'librarian',
+        });
+      }
+
+      // 3. Notify the student (isRead: false => triggers the in-app banner)
+      final notifRef = db
+          .collection('users')
+          .doc(studentUid)
+          .collection('notifications')
+          .doc();
+      batch.set(notifRef, {
+        'title': notifTitle,
+        'message': notifMessage,
+        'timestamp': FieldValue.serverTimestamp(),
+        'isRead': false,
+      });
+
+      // 4. Log it so it shows in the librarian Alerts & History screen
+      final historyRef = db
+          .collection('reservation_cancellations_history')
+          .doc();
+      batch.set(historyRef, {
+        'seatNumber': seatLabel,
+        'studentId': studentUid,
+        'studentEmail': (resData['userEmail'] ?? '').toString(),
+        'actionType': actionType,
+        'cancelledBy':
+            currentLibrarian?.email ?? currentLibrarian?.uid ?? 'Librarian',
+        'cancelledByName': actor.name,
+        'cancelledByUid': actor.uid,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      // 5. Shared staff activity feed (same for every librarian and admin)
+      ActivityLogger.addToBatch(
+        batch,
+        actor: actor,
+        action: actionType == 'released'
+            ? 'seat_released'
+            : 'reservation_cancelled',
+        seatId: seatLabel,
+        details: 'Student: ${(resData['userEmail'] ?? studentUid).toString()}',
+      );
+    } else {
+      ActivityLogger.addToBatch(
+        batch,
+        actor: actor,
+        action: 'seat_released',
+        seatId: seatLabel,
+        details: 'No active reservation on this seat',
+      );
+    }
+
+    await batch.commit();
+  }
+
   void _showSeatOptionsModal(BuildContext context, DocumentSnapshot seatDoc) {
     const primaryRed = Color(0xFFC01A32);
+    const tealGreen = Color(0xFF2EC4B6);
     final data = seatDoc.data() as Map<String, dynamic>;
     final seatNumber = seatDoc.id.toUpperCase();
     final bool isOutOfOrder = data['isOutOfOrder'] == true;
+    final bool isOccupied = data['isOccupied'] == true;
+
+    final messenger = ScaffoldMessenger.of(context);
+
+    Future<void> run(
+      BuildContext sheetContext,
+      Future<void> Function() action,
+      String successMsg,
+    ) async {
+      try {
+        await action();
+        if (sheetContext.mounted) Navigator.pop(sheetContext);
+        messenger.showSnackBar(SnackBar(content: Text(successMsg)));
+      } catch (e) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Action failed: $e'),
+            backgroundColor: primaryRed,
+          ),
+        );
+      }
+    }
+
+    Widget actionButton({
+      required IconData icon,
+      required String label,
+      required Color color,
+      required VoidCallback onPressed,
+    }) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: ElevatedButton.icon(
+            onPressed: onPressed,
+            icon: Icon(icon, color: Colors.white),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: color,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              elevation: 0,
+            ),
+            label: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Manage Seat $seatNumber',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Floor: ${_getFloorLabel(data['floor'])}\nStatus: ${isOutOfOrder ? "Out of Order" : (data['isOccupied'] == true ? "Occupied" : "Available")}',
-                style: const TextStyle(fontSize: 14, color: Color(0xFF7E8494)),
-              ),
-              const SizedBox(height: 24),
-              if (!isOutOfOrder)
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton.icon(
-                    onPressed: () async {
-                      await FirebaseFirestore.instance
-                          .collection('seats')
-                          .doc(seatDoc.id)
-                          .update({'isOutOfOrder': true});
-                      if (!mounted) return;
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Seat $seatNumber marked as Out of Order',
+      builder: (sheetContext) {
+        return StreamBuilder<QuerySnapshot>(
+          stream: _reservationStream(seatDoc.id),
+          builder: (context, resSnapshot) {
+            final QueryDocumentSnapshot? reservationDoc =
+                (resSnapshot.hasData && resSnapshot.data!.docs.isNotEmpty)
+                ? resSnapshot.data!.docs.first
+                : null;
+            final resData = reservationDoc?.data() as Map<String, dynamic>?;
+            final String? reservedBy = resData == null
+                ? null
+                : (resData['userEmail'] ?? reservationDoc!.id).toString();
+
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Manage Seat $seatNumber',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Floor: ${_getFloorLabel(data['floor'])}\n'
+                      'Status: ${isOutOfOrder ? "Out of Order" : (isOccupied ? "Occupied" : "Available")}'
+                      '${reservedBy != null ? "\nReserved by: $reservedBy" : ""}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF7E8494),
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Mark as Available (also evacuates a reserving student)
+                    if (!isOutOfOrder && (isOccupied || reservationDoc != null))
+                      actionButton(
+                        icon: Icons.event_available_rounded,
+                        label: 'Mark as Available',
+                        color: tealGreen,
+                        onPressed: () => run(
+                          sheetContext,
+                          () => _releaseSeat(
+                            seatDoc: seatDoc,
+                            reservationDoc: reservationDoc,
+                            actionType: 'released',
+                            notifTitle: 'Please Vacate Your Seat',
+                            notifMessage:
+                                'The librarian has released seat $seatNumber. '
+                                'Please evacuate the seat as soon as possible.',
                           ),
+                          reservationDoc != null
+                              ? 'Seat $seatNumber is now available. Student notified.'
+                              : 'Seat $seatNumber marked as Available',
                         ),
-                      );
-                    },
-                    icon: const Icon(Icons.block_rounded, color: Colors.white),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryRed,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
                       ),
-                      elevation: 0,
-                    ),
-                    label: const Text(
-                      'Mark as Out of Order',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                )
-              else
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton.icon(
-                    onPressed: () async {
-                      await FirebaseFirestore.instance
-                          .collection('seats')
-                          .doc(seatDoc.id)
-                          .update({'isOutOfOrder': false});
-                      if (!mounted) return;
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Out of Order mark removed'),
+
+                    // Cancel the student's reservation
+                    if (reservationDoc != null)
+                      actionButton(
+                        icon: Icons.cancel_outlined,
+                        label: 'Cancel Reservation & Notify Student',
+                        color: const Color(0xFFDCA134),
+                        onPressed: () => run(
+                          sheetContext,
+                          () => _releaseSeat(
+                            seatDoc: seatDoc,
+                            reservationDoc: reservationDoc,
+                            notifTitle: 'Reservation Cancelled by Librarian',
+                            notifMessage:
+                                'Your reservation for seat $seatNumber was '
+                                'cancelled by the librarian.',
+                          ),
+                          'Reservation cancelled. Student notified.',
                         ),
-                      );
-                    },
-                    icon: const Icon(
-                      Icons.check_circle_outline_rounded,
-                      color: Colors.white,
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2EC4B6),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
                       ),
-                      elevation: 0,
-                    ),
-                    label: const Text(
-                      'Remove Out of Order Mark',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
+
+                    // Out of order toggle
+                    if (!isOutOfOrder)
+                      actionButton(
+                        icon: Icons.block_rounded,
+                        label: 'Mark as Out of Order',
+                        color: primaryRed,
+                        onPressed: () => run(
+                          sheetContext,
+                          () => _setOutOfOrder(seatDoc, true),
+                          'Seat $seatNumber marked as Out of Order',
+                        ),
+                      )
+                    else
+                      actionButton(
+                        icon: Icons.check_circle_outline_rounded,
+                        label: 'Remove Out of Order Mark',
+                        color: tealGreen,
+                        onPressed: () => run(
+                          sheetContext,
+                          () => _setOutOfOrder(seatDoc, false),
+                          'Out of Order mark removed',
+                        ),
                       ),
-                    ),
-                  ),
+                  ],
                 ),
-              const SizedBox(height: 12),
-            ],
-          ),
+              ),
+            );
+          },
         );
       },
     );
