@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../shared/library_time.dart';
 import '../shared/reservation_cleanup.dart';
 import 'reservation_success_screen.dart';
+import '../shared/seat_out_of_order.dart';
 
 /// Thrown inside the reservation transaction when the seat can't be booked.
 class _ReserveException implements Exception {
