@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:libseat2/shared/app_theme.dart';
 
 import 'home_screen.dart';
 import 'floor_selection_screen.dart';
@@ -93,7 +94,7 @@ class _StudentAlertsState extends State<StudentAlerts> {
     final currentUser = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -123,12 +124,12 @@ class _StudentAlertsState extends State<StudentAlerts> {
                     },
                   ),
                   const SizedBox(width: 16),
-                  const Text(
+                  Text(
                     'Alerts & Notifications',
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
-                      color: Colors.black87,
+                      color: context.colors.textPrimary,
                     ),
                   ),
                 ],
@@ -190,12 +191,12 @@ class _StudentAlertsState extends State<StudentAlerts> {
                               decoration: BoxDecoration(
                                 color: isUnread
                                     ? primaryRed.withValues(alpha: 0.04)
-                                    : const Color(0xFFF8F9FA),
+                                    : context.colors.card,
                                 borderRadius: BorderRadius.circular(16),
                                 border: Border.all(
                                   color: isUnread
                                       ? primaryRed.withValues(alpha: 0.3)
-                                      : const Color(0xFFE9ECEF),
+                                      : context.colors.border,
                                   width: 1,
                                 ),
                               ),
@@ -208,14 +209,14 @@ class _StudentAlertsState extends State<StudentAlerts> {
                                     decoration: BoxDecoration(
                                       color: isUnread
                                           ? primaryRed.withValues(alpha: 0.12)
-                                          : const Color(0xFFE2E8F0),
+                                          : context.colors.neutralFill,
                                       shape: BoxShape.circle,
                                     ),
                                     child: Icon(
                                       Icons.notifications_active_rounded,
                                       color: isUnread
                                           ? primaryRed
-                                          : const Color(0xFF64748B),
+                                          : context.colors.textSecondary,
                                       size: 22,
                                     ),
                                   ),
@@ -241,16 +242,18 @@ class _StudentAlertsState extends State<StudentAlerts> {
                                                   fontWeight: isUnread
                                                       ? FontWeight.bold
                                                       : FontWeight.w600,
-                                                  color: Colors.black87,
+                                                  color: context
+                                                      .colors
+                                                      .textPrimary,
                                                 ),
                                               ),
                                             ),
                                             const SizedBox(width: 8),
                                             Text(
                                               timeString,
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontSize: 12,
-                                                color: Color(0xFF94A3B8),
+                                                color: context.colors.textMuted,
                                               ),
                                             ),
                                           ],
@@ -258,9 +261,9 @@ class _StudentAlertsState extends State<StudentAlerts> {
                                         const SizedBox(height: 6),
                                         Text(
                                           message,
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 14,
-                                            color: Color(0xFF475569),
+                                            color: context.colors.textSecondary,
                                             height: 1.3,
                                           ),
                                         ),
@@ -281,8 +284,10 @@ class _StudentAlertsState extends State<StudentAlerts> {
 
       // Bottom Navigation Bar
       bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: Color(0xFFEEEEEE), width: 1.0)),
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(color: context.colors.border, width: 1.0),
+          ),
         ),
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
@@ -315,9 +320,9 @@ class _StudentAlertsState extends State<StudentAlerts> {
             }
           },
           type: BottomNavigationBarType.fixed,
-          backgroundColor: Colors.white,
+          backgroundColor: context.colors.surface,
           selectedItemColor: primaryRed,
-          unselectedItemColor: const Color(0xFF9E9E9E),
+          unselectedItemColor: context.colors.textMuted,
           selectedFontSize: 12,
           unselectedFontSize: 12,
           elevation: 0,
@@ -349,25 +354,25 @@ class _StudentAlertsState extends State<StudentAlerts> {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
-        children: const [
+        children: [
           Icon(
             Icons.notifications_off_outlined,
             size: 64,
-            color: Color(0xFFCBD5E1),
+            color: context.colors.textMuted,
           ),
-          SizedBox(height: 16),
+          const SizedBox(height: 16),
           Text(
             'No notifications yet',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF64748B),
+              color: context.colors.textSecondary,
             ),
           ),
-          SizedBox(height: 6),
+          const SizedBox(height: 6),
           Text(
             'We will notify you when something important happens.',
-            style: TextStyle(fontSize: 14, color: Color(0xFF94A3B8)),
+            style: TextStyle(fontSize: 14, color: context.colors.textMuted),
           ),
         ],
       ),

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:libseat2/shared/app_theme.dart';
+import 'package:libseat2/shared/theme_controller.dart';
 
 import 'home_screen.dart';
 import 'floor_selection_screen.dart';
@@ -79,8 +81,13 @@ class StudentProfileScreen extends StatelessWidget {
     const primaryRed = Color(0xFFC01A32);
     final currentUser = FirebaseAuth.instance.currentUser;
 
+    // A black "Log Out" button would vanish on a dark background
+    final Color logoutColor = context.isDark
+        ? const Color(0xFF3A3A3C)
+        : Colors.black87;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: Column(
           children: [
@@ -107,12 +114,12 @@ class StudentProfileScreen extends StatelessWidget {
                     },
                   ),
                   const SizedBox(width: 8),
-                  const Text(
+                  Text(
                     'Profile',
                     style: TextStyle(
                       fontSize: 26,
                       fontWeight: FontWeight.w500,
-                      color: Colors.black87,
+                      color: context.colors.textPrimary,
                     ),
                   ),
                 ],
@@ -131,8 +138,8 @@ class StudentProfileScreen extends StatelessWidget {
                     Container(
                       width: 130,
                       height: 130,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFF3ECEC),
+                      decoration: BoxDecoration(
+                        color: context.colors.neutralFill,
                         shape: BoxShape.circle,
                       ),
                       child: const Center(
@@ -181,10 +188,10 @@ class StudentProfileScreen extends StatelessWidget {
                             // Student Name
                             Text(
                               name,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 24,
                                 fontWeight: FontWeight.w500,
-                                color: Colors.black87,
+                                color: context.colors.textPrimary,
                               ),
                               textAlign: TextAlign.center,
                             ),
@@ -194,9 +201,9 @@ class StudentProfileScreen extends StatelessWidget {
                             // Student ID
                             Text(
                               'Student ID: $studentId',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 14,
-                                color: Color(0xFF8C919E),
+                                color: context.colors.textSecondary,
                                 fontWeight: FontWeight.w400,
                               ),
                             ),
@@ -206,9 +213,9 @@ class StudentProfileScreen extends StatelessWidget {
                             // Student Email
                             Text(
                               'Email: $email',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 14,
-                                color: Color(0xFF8C919E),
+                                color: context.colors.textSecondary,
                                 fontWeight: FontWeight.w400,
                               ),
                             ),
@@ -246,6 +253,11 @@ class StudentProfileScreen extends StatelessWidget {
 
                     const SizedBox(height: 16),
 
+                    // Dark mode switch
+                    _buildDarkModeTile(),
+
+                    const SizedBox(height: 16),
+
                     _buildMenuButton(
                       title: 'Help & Support',
                       icon: Icons.help_outline_rounded,
@@ -265,7 +277,7 @@ class StudentProfileScreen extends StatelessWidget {
                       title: 'Log Out',
                       icon: Icons.logout_rounded,
                       onTap: () => _handleLogout(context),
-                      color: Colors.black87,
+                      color: logoutColor,
                     ),
                   ],
                 ),
@@ -274,9 +286,10 @@ class StudentProfileScreen extends StatelessWidget {
 
             // Bottom Navigation Bar
             Container(
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
+                color: context.colors.surface,
                 border: Border(
-                  top: BorderSide(color: Color(0xFFEEEEEE), width: 1.0),
+                  top: BorderSide(color: context.colors.border, width: 1.0),
                 ),
               ),
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -332,6 +345,48 @@ class StudentProfileScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  // Dark Mode row with a switch. The choice is saved on the device.
+  Widget _buildDarkModeTile() {
+    const primaryRed = Color(0xFFC01A32);
+
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: ThemeController.mode,
+      builder: (context, mode, _) {
+        return Container(
+          width: double.infinity,
+          height: 52,
+          padding: const EdgeInsets.only(left: 16.0, right: 8.0),
+          decoration: BoxDecoration(
+            color: context.colors.card,
+            borderRadius: BorderRadius.circular(8.0),
+            border: Border.all(color: context.colors.border),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.dark_mode_outlined, color: primaryRed, size: 22),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  'Dark Mode',
+                  style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Switch(
+                value: mode == ThemeMode.dark,
+                onChanged: (on) =>
+                    ThemeController.set(on ? ThemeMode.dark : ThemeMode.light),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

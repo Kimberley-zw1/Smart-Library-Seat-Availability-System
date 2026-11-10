@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:libseat2/shared/activity_feed.dart';
@@ -189,14 +190,15 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
         !category.contains('remov');
   }
 
-  // Only account / login problems get the "edit student" form.
+  // Account / login / password problems also get the "send reset link" option.
   bool _isAccountOrLoginRequest(Map<String, dynamic> data) {
     final String text = '${data['category'] ?? ''} ${data['type'] ?? ''}'
         .toLowerCase();
     return text.contains('account') ||
         text.contains('login') ||
         text.contains('log in') ||
-        text.contains('sign in');
+        text.contains('sign in') ||
+        text.contains('password');
   }
 
   // Works out which student a help request belongs to: by user id first,
@@ -246,7 +248,11 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
     return null;
   }
 
-  Future<void> _openEditStudent(Map<String, dynamic> requestData) async {
+  // Opens the "Reply to Student" sheet for a help request.
+  Future<void> _openReply(
+    Map<String, dynamic> requestData,
+    String docId,
+  ) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
       final studentSnap = await _findStudentDoc(requestData);
@@ -260,7 +266,29 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
         );
         return;
       }
-      _showEditStudentSheet(studentSnap);
+
+      final student = studentSnap.data() ?? <String, dynamic>{};
+      final String name = (student['fullName'] ?? student['name'] ?? '')
+          .toString();
+      final String email = (student['email'] ?? '').toString();
+
+      await showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (sheetContext) => _ReplySheet(
+          studentUid: studentSnap.id,
+          studentName: name,
+          studentEmail: email,
+          requestId: docId,
+          requestTitle: _field(requestData, ['title', 'subject', 'action']),
+          isAccountIssue: _isAccountOrLoginRequest(requestData),
+          alreadyResolved: requestData['resolved'] == true,
+        ),
+      );
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(
@@ -272,10 +300,12 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
   }
 
   // Shows the complete help request: the message first, then every field.
-  void _showRequestDetails(
-    Map<String, dynamic> data, {
-    required bool canEditStudent,
-  }) {
+  //
+  // Plain Text is used here (not SelectableText). SelectableText inside a
+  // closing bottom sheet can trigger Flutter's "_dependents.isEmpty" assertion,
+  // which was the red error screen when closing this sheet. A Copy button
+  // replaces text selection.
+  void _showRequestDetails(Map<String, dynamic> data, {required String docId}) {
     const primaryRed = Color(0xFFC01A32);
     const textSubColor = Color(0xFF8C919E);
 
@@ -337,13 +367,58 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if (message.isNotEmpty) ...[
-                            const Text(
-                              'Message',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: textSubColor,
-                              ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'Message',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: textSubColor,
+                                  ),
+                                ),
+                                InkWell(
+                                  onTap: () async {
+                                    final messenger = ScaffoldMessenger.of(
+                                      sheetContext,
+                                    );
+                                    await Clipboard.setData(
+                                      ClipboardData(text: message),
+                                    );
+                                    messenger.showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Message copied.'),
+                                      ),
+                                    );
+                                  },
+                                  child: const Padding(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 2,
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.copy_rounded,
+                                          size: 14,
+                                          color: primaryRed,
+                                        ),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          'Copy',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: primaryRed,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 6),
                             Container(
@@ -356,7 +431,7 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
                                   color: const Color(0xFFF0E4E5),
                                 ),
                               ),
-                              child: SelectableText(
+                              child: Text(
                                 message,
                                 style: const TextStyle(
                                   fontSize: 14,
@@ -390,7 +465,7 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 2),
-                                  SelectableText(
+                                  Text(
                                     _formatValue(e.value),
                                     style: const TextStyle(
                                       fontSize: 14,
@@ -406,39 +481,37 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
                       ),
                     ),
                   ),
-                  if (canEditStudent) ...[
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.pop(sheetContext);
-                          _openEditStudent(data);
-                        },
-                        icon: const Icon(
-                          Icons.edit_rounded,
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(sheetContext);
+                        _openReply(data, docId);
+                      },
+                      icon: const Icon(
+                        Icons.reply_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      label: const Text(
+                        'Reply to Student',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
                           color: Colors.white,
-                          size: 20,
-                        ),
-                        label: const Text(
-                          'Edit Student Details',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: primaryRed,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 0,
                         ),
                       ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryRed,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 0,
+                      ),
                     ),
-                  ],
+                  ),
                 ],
               ),
             ),
@@ -446,340 +519,6 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
         );
       },
     );
-  }
-
-  // Form for fixing a student's account details. Saving and sending a reset
-  // link are both recorded in the staff activity feed with the admin's name.
-  void _showEditStudentSheet(
-    DocumentSnapshot<Map<String, dynamic>> studentSnap,
-  ) {
-    const primaryRed = Color(0xFFC01A32);
-    const textSubColor = Color(0xFF8C919E);
-
-    final messenger = ScaffoldMessenger.of(context);
-    final Map<String, dynamic> student =
-        studentSnap.data() ?? <String, dynamic>{};
-
-    // Keep using whichever field names the student's record already uses
-    final String nameKey = student.containsKey('fullName')
-        ? 'fullName'
-        : (student.containsKey('name') ? 'name' : 'fullName');
-    final String idKey = [
-      'studentId',
-      'studentID',
-      'id',
-    ].firstWhere((k) => student.containsKey(k), orElse: () => 'studentId');
-
-    final String originalName = (student[nameKey] ?? '').toString();
-    final String originalEmail = (student['email'] ?? '').toString();
-    final String originalId = (student[idKey] ?? '').toString();
-
-    final nameController = TextEditingController(text: originalName);
-    final emailController = TextEditingController(text: originalEmail);
-    final idController = TextEditingController(text: originalId);
-
-    String? errorText;
-    String? infoText;
-    bool isBusy = false;
-
-    InputDecoration deco(String label, {String? helper}) {
-      return InputDecoration(
-        labelText: label,
-        helperText: helper,
-        helperMaxLines: 2,
-        filled: true,
-        fillColor: const Color(0xFFF9F9FB),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-      );
-    }
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            Future<void> save() async {
-              final String name = nameController.text.trim();
-              final String email = emailController.text.trim();
-              final String studentId = idController.text.trim();
-
-              if (name.isEmpty || studentId.isEmpty || !email.contains('@')) {
-                setSheetState(() {
-                  infoText = null;
-                  errorText =
-                      'Name, a valid email and student ID are required.';
-                });
-                return;
-              }
-
-              final Map<String, dynamic> updates = {};
-              if (name != originalName) updates[nameKey] = name;
-              if (email != originalEmail) updates['email'] = email;
-              if (studentId != originalId) updates[idKey] = studentId;
-
-              if (updates.isEmpty) {
-                setSheetState(() {
-                  infoText = null;
-                  errorText = 'No changes to save.';
-                });
-                return;
-              }
-
-              setSheetState(() {
-                errorText = null;
-                infoText = null;
-                isBusy = true;
-              });
-
-              try {
-                final db = FirebaseFirestore.instance;
-                final actor = await StaffActor.current(role: 'admin');
-                final batch = db.batch();
-
-                batch.update(studentSnap.reference, updates);
-
-                final changed = <String>[
-                  if (updates.containsKey(nameKey)) 'name',
-                  if (updates.containsKey('email')) 'email',
-                  if (updates.containsKey(idKey)) 'student ID',
-                ];
-                ActivityLogger.addToBatch(
-                  batch,
-                  actor: actor,
-                  action: 'student_details_edited',
-                  details:
-                      'Student: ${originalName.isEmpty ? originalEmail : originalName}. '
-                      'Changed: ${changed.join(', ')}',
-                );
-
-                await batch.commit();
-
-                if (sheetContext.mounted) Navigator.pop(sheetContext);
-                messenger.showSnackBar(
-                  const SnackBar(
-                    content: Text('Student details updated.'),
-                    backgroundColor: Color(0xFF2EC4B6),
-                  ),
-                );
-              } catch (e) {
-                if (!sheetContext.mounted) return;
-                setSheetState(() {
-                  isBusy = false;
-                  errorText = 'Failed to save: $e';
-                });
-              }
-            }
-
-            Future<void> sendReset() async {
-              if (originalEmail.isEmpty) {
-                setSheetState(() {
-                  infoText = null;
-                  errorText = 'This student has no email on file.';
-                });
-                return;
-              }
-
-              setSheetState(() {
-                errorText = null;
-                infoText = null;
-                isBusy = true;
-              });
-
-              try {
-                await FirebaseAuth.instance.sendPasswordResetEmail(
-                  email: originalEmail,
-                );
-
-                // Record who sent it. A logging problem must not make it look
-                // like the email itself failed, so it is handled separately.
-                try {
-                  final actor = await StaffActor.current(role: 'admin');
-                  await ActivityLogger.log(
-                    actor: actor,
-                    action: 'password_reset_sent',
-                    details: 'Reset link sent to $originalEmail',
-                  );
-                } catch (_) {}
-
-                if (!sheetContext.mounted) return;
-                setSheetState(() {
-                  isBusy = false;
-                  infoText = 'Password reset link sent to $originalEmail.';
-                });
-              } catch (e) {
-                if (!sheetContext.mounted) return;
-                setSheetState(() {
-                  isBusy = false;
-                  errorText = 'Could not send reset link: $e';
-                });
-              }
-            }
-
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 24,
-                right: 24,
-                top: 24,
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Edit Student Details',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      originalEmail.isEmpty
-                          ? 'Student account'
-                          : 'Account: $originalEmail',
-                      style: const TextStyle(fontSize: 13, color: textSubColor),
-                    ),
-                    const SizedBox(height: 20),
-                    TextField(
-                      controller: nameController,
-                      enabled: !isBusy,
-                      textCapitalization: TextCapitalization.words,
-                      decoration: deco('Full name'),
-                    ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: emailController,
-                      enabled: !isBusy,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: deco(
-                        'Email',
-                        helper: "Updates the profile email only. The login email can't be changed from the app.",
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: idController,
-                      enabled: !isBusy,
-                      decoration: deco('Student ID'),
-                    ),
-
-                    if (errorText != null) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        errorText!,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: primaryRed,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                    if (infoText != null) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        infoText!,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: Color(0xFF2EC4B6),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton(
-                        onPressed: isBusy ? null : save,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: primaryRed,
-                          disabledBackgroundColor: Colors.grey.shade300,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 0,
-                        ),
-                        child: isBusy
-                            ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2.5,
-                                ),
-                              )
-                            : const Text(
-                                'Save Changes',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-                    const Divider(height: 1),
-                    const SizedBox(height: 16),
-
-                    const Text(
-                      'Password',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      "Passwords can't be viewed or set from the app. Send the student a reset link instead.",
-                      style: TextStyle(fontSize: 13, color: textSubColor),
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 46,
-                      child: OutlinedButton.icon(
-                        onPressed: isBusy ? null : sendReset,
-                        icon: const Icon(Icons.lock_reset_rounded, size: 20),
-                        label: const Text(
-                          'Send Password Reset Link',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: primaryRed,
-                          side: const BorderSide(color: primaryRed),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    ).whenComplete(() {
-      nameController.dispose();
-      emailController.dispose();
-      idController.dispose();
-    });
   }
 
   void _showMaintenanceSheet() {
@@ -1209,6 +948,7 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
                           separatorBuilder: (context, index) =>
                               const SizedBox(height: 12),
                           itemBuilder: (context, index) {
+                            final String docId = docs[index].id;
                             final data =
                                 docs[index].data() as Map<String, dynamic>;
                             final String title = _field(data, [
@@ -1222,8 +962,6 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
                               'message',
                             ]);
                             final bool isHelp = _isHelpRequest(data);
-                            final bool canEditStudent =
-                                isHelp && _isAccountOrLoginRequest(data);
                             final String type =
                                 (data['type'] ?? data['category'] ?? '')
                                     .toString()
@@ -1390,8 +1128,7 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
                                                 onPressed: () =>
                                                     _showRequestDetails(
                                                       data,
-                                                      canEditStudent:
-                                                          canEditStudent,
+                                                      docId: docId,
                                                     ),
                                                 icon: const Icon(
                                                   Icons.article_outlined,
@@ -1419,37 +1156,35 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
                                                   ),
                                                 ),
                                               ),
-                                              if (canEditStudent)
-                                                ElevatedButton.icon(
-                                                  onPressed: () =>
-                                                      _openEditStudent(data),
-                                                  icon: const Icon(
-                                                    Icons.edit_rounded,
-                                                    size: 18,
+                                              ElevatedButton.icon(
+                                                onPressed: () =>
+                                                    _openReply(data, docId),
+                                                icon: const Icon(
+                                                  Icons.reply_rounded,
+                                                  size: 18,
+                                                  color: Colors.white,
+                                                ),
+                                                label: const Text(
+                                                  'Reply to Student',
+                                                  style: TextStyle(
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.bold,
                                                     color: Colors.white,
                                                   ),
-                                                  label: const Text(
-                                                    'Edit Student Details',
-                                                    style: TextStyle(
-                                                      fontSize: 13,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      color: Colors.white,
-                                                    ),
-                                                  ),
-                                                  style: ElevatedButton.styleFrom(
-                                                    backgroundColor: primaryRed,
-                                                    elevation: 0,
-                                                    visualDensity:
-                                                        VisualDensity.compact,
-                                                    shape: RoundedRectangleBorder(
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            10,
-                                                          ),
-                                                    ),
+                                                ),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: primaryRed,
+                                                  elevation: 0,
+                                                  visualDensity:
+                                                      VisualDensity.compact,
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          10,
+                                                        ),
                                                   ),
                                                 ),
+                                              ),
                                             ],
                                           ),
                                         ],
@@ -1506,6 +1241,365 @@ class _AdminAlertsScreenState extends State<AdminAlertsScreen> {
               activeIcon: Icon(Icons.person_rounded),
               label: 'Profile',
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// "Reply to Student" sheet.
+//
+// The admin writes a message that is delivered to the student inside the app
+// (it shows up as a banner and in their notifications). For login problems the
+// admin can also send a password reset link by email. Both actions are recorded
+// in the staff activity feed with the admin's name.
+//
+// This is its own StatefulWidget so the text controller is disposed together
+// with the sheet (not while it is still animating closed).
+// -----------------------------------------------------------------------------
+class _ReplySheet extends StatefulWidget {
+  final String studentUid;
+  final String studentName;
+  final String studentEmail;
+  final String requestId;
+  final String requestTitle;
+  final bool isAccountIssue;
+  final bool alreadyResolved;
+
+  const _ReplySheet({
+    required this.studentUid,
+    required this.studentName,
+    required this.studentEmail,
+    required this.requestId,
+    required this.requestTitle,
+    required this.isAccountIssue,
+    required this.alreadyResolved,
+  });
+
+  @override
+  State<_ReplySheet> createState() => _ReplySheetState();
+}
+
+class _ReplySheetState extends State<_ReplySheet> {
+  final TextEditingController _messageController = TextEditingController();
+  bool _markResolved = true;
+  bool _busy = false;
+  String? _error;
+  String? _info;
+
+  static const Color _primaryRed = Color(0xFFC01A32);
+  static const Color _textSubColor = Color(0xFF8C919E);
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  String get _studentLabel {
+    if (widget.studentName.isNotEmpty) return widget.studentName;
+    if (widget.studentEmail.isNotEmpty) return widget.studentEmail;
+    return 'Student';
+  }
+
+  Future<void> _sendMessage() async {
+    final String text = _messageController.text.trim();
+    if (text.isEmpty) {
+      setState(() {
+        _info = null;
+        _error = 'Please write a message first.';
+      });
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+      _error = null;
+      _info = null;
+    });
+
+    try {
+      final db = FirebaseFirestore.instance;
+      final actor = await StaffActor.current(role: 'admin');
+      final bool resolveNow = _markResolved && !widget.alreadyResolved;
+
+      final batch = db.batch();
+
+      // The message the student sees in the app
+      final notifRef = db
+          .collection('users')
+          .doc(widget.studentUid)
+          .collection('notifications')
+          .doc();
+      batch.set(notifRef, {
+        'title': widget.requestTitle.isEmpty
+            ? 'Reply to your help request'
+            : 'Reply: ${widget.requestTitle}',
+        'message': text,
+        'timestamp': FieldValue.serverTimestamp(),
+        'isRead': false, // shows as a banner on the student's home screen
+      });
+
+      // Optionally close the request, labelled with who did it
+      if (resolveNow) {
+        batch.update(db.collection('admin_alerts').doc(widget.requestId), {
+          'resolved': true,
+          'resolvedAt': FieldValue.serverTimestamp(),
+          'resolvedByUid': actor.uid,
+          'resolvedByName': actor.name,
+          'resolvedByRole': actor.role,
+        });
+      }
+
+      final String preview = text.length > 80
+          ? '${text.substring(0, 80)}...'
+          : text;
+      ActivityLogger.addToBatch(
+        batch,
+        actor: actor,
+        action: 'help_request_replied',
+        details:
+            'To: $_studentLabel. ${resolveNow ? 'Request resolved. ' : ''}'
+            'Message: $preview',
+      );
+
+      await batch.commit();
+
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      Navigator.pop(context);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Message sent to $_studentLabel.'),
+          backgroundColor: const Color(0xFF2EC4B6),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = 'Failed to send message: $e';
+      });
+    }
+  }
+
+  Future<void> _sendResetLink() async {
+    if (widget.studentEmail.isEmpty) {
+      setState(() {
+        _info = null;
+        _error = 'This student has no email on file.';
+      });
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+      _error = null;
+      _info = null;
+    });
+
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(
+        email: widget.studentEmail,
+      );
+
+      // Record who sent it. A logging problem must not make it look like the
+      // email itself failed, so it is handled separately.
+      try {
+        final actor = await StaffActor.current(role: 'admin');
+        await ActivityLogger.log(
+          actor: actor,
+          action: 'password_reset_sent',
+          details: 'Reset link sent to ${widget.studentEmail}',
+        );
+      } catch (_) {}
+
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _info = 'Password reset link sent to ${widget.studentEmail}.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = 'Could not send reset link: $e';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 24,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Reply to Student',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              widget.studentEmail.isEmpty
+                  ? _studentLabel
+                  : '$_studentLabel  •  ${widget.studentEmail}',
+              style: const TextStyle(fontSize: 13, color: _textSubColor),
+            ),
+            if (widget.requestTitle.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(
+                'Re: ${widget.requestTitle}',
+                style: const TextStyle(fontSize: 13, color: _textSubColor),
+              ),
+            ],
+            const SizedBox(height: 16),
+            TextField(
+              controller: _messageController,
+              enabled: !_busy,
+              minLines: 3,
+              maxLines: 6,
+              maxLength: 500,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: InputDecoration(
+                hintText: 'Write your reply to the student...',
+                filled: true,
+                fillColor: const Color(0xFFF9F9FB),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            if (!widget.alreadyResolved)
+              CheckboxListTile(
+                value: _markResolved,
+                onChanged: _busy
+                    ? null
+                    : (v) => setState(() => _markResolved = v ?? true),
+                title: const Text(
+                  'Mark this request as resolved',
+                  style: TextStyle(fontSize: 14),
+                ),
+                activeColor: _primaryRed,
+                controlAffinity: ListTileControlAffinity.leading,
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: _primaryRed,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+            if (_info != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _info!,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF2EC4B6),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton.icon(
+                onPressed: _busy ? null : _sendMessage,
+                icon: _busy
+                    ? const SizedBox.shrink()
+                    : const Icon(
+                        Icons.send_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                label: _busy
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2.5,
+                        ),
+                      )
+                    : const Text(
+                        'Send Message',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _primaryRed,
+                  disabledBackgroundColor: Colors.grey.shade300,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 0,
+                ),
+              ),
+            ),
+            if (widget.isAccountIssue) ...[
+              const SizedBox(height: 20),
+              const Divider(height: 1),
+              const SizedBox(height: 16),
+              const Text(
+                'Login problem?',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                "Passwords can't be viewed or set from the app. Send the "
+                'student a reset link by email instead.',
+                style: TextStyle(fontSize: 13, color: _textSubColor),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : _sendResetLink,
+                  icon: const Icon(Icons.lock_reset_rounded, size: 20),
+                  label: const Text(
+                    'Send Password Reset Link',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _primaryRed,
+                    side: const BorderSide(color: _primaryRed),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),

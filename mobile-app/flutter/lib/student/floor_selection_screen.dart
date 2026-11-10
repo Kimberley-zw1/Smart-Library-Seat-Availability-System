@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:libseat2/shared/app_theme.dart';
 
 import 'home_screen.dart';
 import 'first_floor_screen.dart';
@@ -56,7 +57,7 @@ class _FloorSelectionScreenState extends State<FloorSelectionScreen> {
     const cardRed = Color(0xFFC81E38);
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24.0),
@@ -98,23 +99,23 @@ class _FloorSelectionScreenState extends State<FloorSelectionScreen> {
               const SizedBox(height: 4),
 
               // Main Title
-              const Text(
+              Text(
                 'Select a floor',
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
-                  color: Colors.black87,
+                  color: context.colors.textPrimary,
                 ),
               ),
 
               const SizedBox(height: 6),
 
               // Subtitle
-              const Text(
+              Text(
                 'Choose a floor to view the seat map',
                 style: TextStyle(
                   fontSize: 16,
-                  color: Color(0xFF7E8494),
+                  color: context.colors.textSecondary,
                   fontWeight: FontWeight.w400,
                 ),
               ),
@@ -177,8 +178,10 @@ class _FloorSelectionScreenState extends State<FloorSelectionScreen> {
         ),
       ),
       bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: Color(0xFFEEEEEE), width: 1.0)),
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(color: context.colors.border, width: 1.0),
+          ),
         ),
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
@@ -216,9 +219,9 @@ class _FloorSelectionScreenState extends State<FloorSelectionScreen> {
             }
           },
           type: BottomNavigationBarType.fixed,
-          backgroundColor: Colors.white,
+          backgroundColor: context.colors.surface,
           selectedItemColor: primaryRed,
-          unselectedItemColor: const Color(0xFF9E9E9E),
+          unselectedItemColor: context.colors.textMuted,
           selectedFontSize: 12,
           unselectedFontSize: 12,
           elevation: 0,
@@ -245,6 +248,7 @@ class _FloorSelectionScreenState extends State<FloorSelectionScreen> {
     );
   }
 
+  // The floor cards stay red in both modes, so their text colors don't change.
   Widget _buildFloorCard({
     required String title,
     required String subtitle,

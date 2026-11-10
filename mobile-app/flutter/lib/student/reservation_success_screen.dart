@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:libseat2/shared/app_theme.dart';
+import 'package:libseat2/shared/booking_confirmation.dart';
 
 import 'home_screen.dart'; // Import your home screen file here
 
@@ -18,8 +20,9 @@ class _ReservationSuccessScreenState extends State<ReservationSuccessScreen> {
   @override
   void initState() {
     super.initState();
-    // Automatically navigate to Home Page after 2 seconds
-    _timer = Timer(const Duration(seconds: 2), () {
+    // Automatically navigate to Home Page after 3 seconds (long enough to
+    // read the confirmation reminder below)
+    _timer = Timer(const Duration(seconds: 3), () {
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (context) => const HomeScreen()),
@@ -40,7 +43,7 @@ class _ReservationSuccessScreenState extends State<ReservationSuccessScreen> {
     const successGreen = Color(0xFF8CD3A8);
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: Center(
           child: Column(
@@ -60,13 +63,28 @@ class _ReservationSuccessScreenState extends State<ReservationSuccessScreen> {
                 ),
               ),
               const SizedBox(height: 36),
-              const Text(
+              Text(
                 'Process Complete',
                 style: TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.w500,
-                  color: Colors.black87,
+                  color: context.colors.textPrimary,
                   letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 36),
+                child: Text(
+                  'Confirm your booking on the home screen within '
+                  '${kConfirmWindow.inMinutes} minutes or it will be cancelled '
+                  'automatically.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 15,
+                    height: 1.4,
+                    color: context.colors.textSecondary,
+                  ),
                 ),
               ),
             ],

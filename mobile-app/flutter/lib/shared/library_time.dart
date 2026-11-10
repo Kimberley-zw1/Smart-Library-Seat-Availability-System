@@ -30,3 +30,20 @@ DateTime todaysClearTimeUtc() {
     kClearMinute,
   ).subtract(kCatOffset);
 }
+
+/// "2:10 PM" for a CAT wall-clock time (use with toCat()).
+String formatClock(DateTime catTime) {
+  final int h12 = catTime.hour % 12 == 0 ? 12 : catTime.hour % 12;
+  final String mm = catTime.minute.toString().padLeft(2, '0');
+  return '$h12:$mm ${catTime.hour >= 12 ? 'PM' : 'AM'}';
+}
+
+/// "1h 12m", "35m" or "under 1m" for a length of time.
+String formatStay(Duration d) {
+  final int minutes = d.inMinutes;
+  if (minutes < 1) return 'under 1m';
+  final int h = minutes ~/ 60;
+  final int m = minutes % 60;
+  if (h == 0) return '${m}m';
+  return '${h}h ${m}m';
+}

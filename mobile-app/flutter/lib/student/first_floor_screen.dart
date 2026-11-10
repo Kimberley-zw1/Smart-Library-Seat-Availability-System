@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:libseat2/shared/app_theme.dart';
 
 import 'reported_seat_builder.dart';
 import 'seat_detail_screen.dart';
@@ -16,7 +17,7 @@ class FirstFloorScreen extends StatelessWidget {
     const outOfOrderGrey = Colors.grey;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: Column(
           children: [
@@ -36,12 +37,12 @@ class FirstFloorScreen extends StatelessWidget {
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                   const SizedBox(width: 8),
-                  const Text(
+                  Text(
                     'First floor',
                     style: TextStyle(
                       fontSize: 26,
                       fontWeight: FontWeight.bold,
-                      color: Colors.black87,
+                      color: context.colors.textPrimary,
                     ),
                   ),
                 ],
@@ -58,10 +59,10 @@ class FirstFloorScreen extends StatelessWidget {
                 spacing: 12,
                 runSpacing: 6,
                 children: [
-                  _legendItem(availableGreen, 'Available'),
-                  _legendItem(primaryRed, 'Occupied'),
-                  _legendItem(reportedAmber, 'Reported'),
-                  _legendItem(outOfOrderGrey, 'Out of Order'),
+                  _legendItem(context, availableGreen, 'Available'),
+                  _legendItem(context, primaryRed, 'Occupied'),
+                  _legendItem(context, reportedAmber, 'Reported'),
+                  _legendItem(context, outOfOrderGrey, 'Out of Order'),
                 ],
               ),
             ),
@@ -131,21 +132,24 @@ class FirstFloorScreen extends StatelessWidget {
                     child: Container(
                       width: double.infinity,
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: context.colors.surface,
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.black87, width: 1.5),
+                        border: Border.all(
+                          color: context.colors.textPrimary,
+                          width: 1.5,
+                        ),
                       ),
                       child: Stack(
                         children: [
                           // 1. Stairs Label (Top Left)
-                          const Positioned(
+                          Positioned(
                             top: 40,
                             left: 60,
                             child: Text(
                               'Stairs',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Colors.black87,
+                                color: context.colors.textPrimary,
                                 fontWeight: FontWeight.w400,
                               ),
                             ),
@@ -159,20 +163,20 @@ class FirstFloorScreen extends StatelessWidget {
                               width: 80,
                               height: 140,
                               decoration: BoxDecoration(
-                                color: Colors.white,
+                                color: context.colors.surface,
                                 border: Border.all(
-                                  color: Colors.black87,
+                                  color: context.colors.textPrimary,
                                   width: 2,
                                 ),
                               ),
-                              child: const Center(
+                              child: Center(
                                 child: Text(
                                   'Librarian\n\nSection',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w500,
-                                    color: Colors.black87,
+                                    color: context.colors.textPrimary,
                                   ),
                                 ),
                               ),
@@ -262,7 +266,7 @@ class FirstFloorScreen extends StatelessWidget {
     );
   }
 
-  Widget _legendItem(Color color, String label) {
+  Widget _legendItem(BuildContext context, Color color, String label) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -270,9 +274,9 @@ class FirstFloorScreen extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 12,
-            color: Color(0xFF8C919E),
+            color: context.colors.textSecondary,
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -280,6 +284,7 @@ class FirstFloorScreen extends StatelessWidget {
     );
   }
 
+  // The seat tables are tan in both modes, so their text colors don't change.
   Widget _buildSeatBlock({
     required String label,
     String? subLabel,

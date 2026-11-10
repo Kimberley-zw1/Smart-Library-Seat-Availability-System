@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:libseat2/shared/app_theme.dart';
 
 /// Form where a student describes an issue. The request is saved to the
 /// 'admin_alerts' collection so it appears in the admin's alerts.
@@ -109,9 +110,9 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
     const primaryRed = Color(0xFFC01A32);
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: context.colors.background,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        // Background and icon colors come from the app theme
         elevation: 0,
         leading: IconButton(
           icon: const Icon(
@@ -121,10 +122,10 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
           ),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const Text(
+        title: Text(
           'Help & Support',
           style: TextStyle(
-            color: Colors.black87,
+            color: context.colors.textPrimary,
             fontWeight: FontWeight.bold,
             fontSize: 20,
           ),
@@ -136,20 +137,23 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Tell us what went wrong and an administrator will look into it.',
-                style: TextStyle(fontSize: 14, color: Color(0xFF7E8494)),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: context.colors.textSecondary,
+                ),
               ),
 
               const SizedBox(height: 24),
 
               // Category
-              const Text(
+              Text(
                 'What is this about?',
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
-                  color: Colors.black87,
+                  color: context.colors.textPrimary,
                 ),
               ),
               const SizedBox(height: 10),
@@ -162,9 +166,11 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
                     label: Text(category),
                     selected: isSelected,
                     selectedColor: primaryRed,
-                    backgroundColor: const Color(0xFFF9F9FB),
+                    backgroundColor: context.colors.card,
                     labelStyle: TextStyle(
-                      color: isSelected ? Colors.white : Colors.black87,
+                      color: isSelected
+                          ? Colors.white
+                          : context.colors.textPrimary,
                       fontWeight: FontWeight.bold,
                       fontSize: 13,
                     ),
@@ -247,11 +253,14 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
 
               const SizedBox(height: 16),
 
-              const Center(
+              Center(
                 child: Text(
                   'You can also contact IT Services at africau.edu.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12, color: Color(0xFF7E8494)),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.colors.textSecondary,
+                  ),
                 ),
               ),
 

@@ -3,11 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:libseat2/shared/app_theme.dart';
 
 import '../shared/library_time.dart';
 import '../shared/reservation_cleanup.dart';
 import 'reservation_success_screen.dart';
 import '../shared/seat_out_of_order.dart';
+
+import 'package:libseat2/shared/booking_confirmation.dart';
 
 /// Thrown inside the reservation transaction when the seat can't be booked.
 class _ReserveException implements Exception {
@@ -67,6 +70,10 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
         .doc('report_${widget.seatId}')
         .snapshots();
 
+    // Start measuring the phone-vs-Firebase clock difference now, so the
+    // booking-confirmation countdown is accurate by the time it appears.
+    BookingConfirmation.syncClock();
+
     // Re-check regularly so the button updates when the clock crosses
     // 9:00 AM or 10:00 PM while the screen is open.
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -113,6 +120,8 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
       // Free up anything left over from yesterday (or an earlier session)
       // before checking availability.
       await ReservationCleanup.run();
+      // Release seats held by students who never confirmed their booking
+      await BookingConfirmation.sweepExpired();
       if (!mounted) return;
 
       final db = FirebaseFirestore.instance;
@@ -176,6 +185,9 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
           'historyId':
               historyRef.id, // lets cancel / auto-clear close the record
           'status': 'active',
+          // The student must confirm within kConfirmWindow (5 minutes) or
+          // the booking is cancelled automatically.
+          'confirmed': false,
         });
 
         // 3. Permanent historical record (powers Overview and Reports)
@@ -190,7 +202,9 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
         tx.set(notificationRef, {
           'title': 'Seat Reserved',
           'message':
-              'Your reservation for seat ${widget.seatId} on ${widget.floorName} is confirmed.',
+              'Seat ${widget.seatId} on ${widget.floorName} is held for you. '
+              'Confirm your booking within ${kConfirmWindow.inMinutes} minutes '
+              'or it will be cancelled automatically.',
           'timestamp': FieldValue.serverTimestamp(),
           'isRead': false,
         });
@@ -356,9 +370,9 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
     final currentUser = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: context.colors.background,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        // Background color comes from the app theme
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: primaryRed, size: 28),
@@ -366,8 +380,8 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
         ),
         title: Text(
           'Seat ${widget.seatId}',
-          style: const TextStyle(
-            color: Colors.black87,
+          style: TextStyle(
+            color: context.colors.textPrimary,
             fontWeight: FontWeight.bold,
             fontSize: 22,
           ),
@@ -447,10 +461,10 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
                           Container(
                             padding: const EdgeInsets.all(24.0),
                             decoration: BoxDecoration(
-                              color: Colors.grey.shade50,
+                              color: context.colors.card,
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
-                                color: Colors.grey.shade300,
+                                color: context.colors.border,
                                 width: 1.5,
                               ),
                             ),
@@ -466,10 +480,10 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
                                 const SizedBox(height: 16),
                                 Text(
                                   'Seat ${widget.seatId}',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 28,
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.black87,
+                                    color: context.colors.textPrimary,
                                   ),
                                 ),
                                 const SizedBox(height: 8),
@@ -477,7 +491,7 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
                                   widget.floorName,
                                   style: TextStyle(
                                     fontSize: 16,
-                                    color: Colors.grey.shade600,
+                                    color: context.colors.textSecondary,
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
@@ -578,6 +592,23 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
                               ),
                             ),
 
+                          // Heads-up about the confirmation window
+                          if (isButtonEnabled)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12.0),
+                              child: Text(
+                                'After you reserve, confirm your booking within '
+                                '${kConfirmWindow.inMinutes} minutes or it will be '
+                                'cancelled automatically.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: context.colors.textSecondary,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ),
+
                           // Reserve Action Button
                           SizedBox(
                             height: 54,
@@ -587,7 +618,8 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
                                   : null,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: primaryRed,
-                                disabledBackgroundColor: Colors.grey.shade300,
+                                disabledBackgroundColor:
+                                    context.colors.neutralFill,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
@@ -619,7 +651,7 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
                                         fontWeight: FontWeight.bold,
                                         color: isButtonEnabled
                                             ? Colors.white
-                                            : Colors.grey.shade600,
+                                            : context.colors.textMuted,
                                       ),
                                     ),
                             ),
@@ -662,10 +694,11 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
                               ),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: primaryRed,
-                                disabledForegroundColor: Colors.grey.shade600,
+                                disabledForegroundColor:
+                                    context.colors.textMuted,
                                 side: BorderSide(
                                   color: reportDisabled
-                                      ? Colors.grey.shade300
+                                      ? context.colors.border
                                       : primaryRed,
                                   width: 1.2,
                                 ),

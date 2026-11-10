@@ -52,10 +52,8 @@ class _ActivityFeedState extends State<ActivityFeed> {
         return 'Student details edited';
       case 'password_reset_sent':
         return 'Password reset link sent';
-      case 'student_details_edited':
-        return 'Student details edited';
-      case 'password_reset_sent':
-        return 'Password reset link sent';
+      case 'help_request_replied':
+        return 'Replied to a help request';
       default:
         final a = (d['action'] ?? 'Activity').toString();
         return a.replaceAll('_', ' ');
@@ -69,6 +67,7 @@ class _ActivityFeedState extends State<ActivityFeed> {
     if (action.startsWith('closing_')) return Icons.access_time_filled_rounded;
     if (action.startsWith('maintenance_')) return Icons.build_rounded;
     if (action.startsWith('password_')) return Icons.lock_reset_rounded;
+    if (action.startsWith('help_')) return Icons.support_agent_rounded;
     if (action.startsWith('user_') ||
         action.startsWith('staff_') ||
         action.startsWith('student_')) {
