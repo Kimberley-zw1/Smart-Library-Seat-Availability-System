@@ -1,0 +1,381 @@
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:libseat2/shared/app_theme.dart';
+
+import 'home_screen.dart';
+import 'floor_selection_screen.dart';
+import 'student_profile_screen.dart';
+
+class StudentAlerts extends StatefulWidget {
+  const StudentAlerts({super.key});
+
+  @override
+  State<StudentAlerts> createState() => _StudentAlertsState();
+}
+
+class _StudentAlertsState extends State<StudentAlerts> {
+  final int _currentIndex = 2; // Selected tab: Alerts
+
+  @override
+  void dispose() {
+    // Mark everything as read when the student leaves, so the unread
+    // highlights stay visible for the whole visit.
+    _markAllRead();
+    super.dispose();
+  }
+
+  Future<void> _markAllRead() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      final unread = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('notifications')
+          .where('isRead', isEqualTo: false)
+          .get();
+
+      if (unread.docs.isEmpty) return;
+
+      final batch = FirebaseFirestore.instance.batch();
+      for (final d in unread.docs) {
+        batch.update(d.reference, {'isRead': true});
+      }
+      await batch.commit();
+    } catch (_) {
+      // Non-critical: ignore failures marking notifications as read
+    }
+  }
+
+  String _formatTimestamp(Timestamp? timestamp) {
+    if (timestamp == null) return 'Just now';
+    final DateTime dateTime = timestamp.toDate();
+    final DateTime now = DateTime.now();
+
+    // Format time (e.g., 2:30 PM)
+    int hour = dateTime.hour;
+    final String period = hour >= 12 ? 'PM' : 'AM';
+    hour = hour % 12;
+    if (hour == 0) hour = 12;
+    final String minute = dateTime.minute.toString().padLeft(2, '0');
+    final String timeStr = '$hour:$minute $period';
+
+    // If today, show time only
+    if (dateTime.year == now.year &&
+        dateTime.month == now.month &&
+        dateTime.day == now.day) {
+      return timeStr;
+    }
+
+    // Otherwise show Month, Day, and Time
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final String monthStr = months[dateTime.month - 1];
+    return '$monthStr ${dateTime.day}, $timeStr';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const primaryRed = Color(0xFFC01A32);
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    return Scaffold(
+      backgroundColor: context.colors.background,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 16),
+
+            // Header Section
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20.0),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.arrow_back_rounded,
+                      color: primaryRed,
+                      size: 26,
+                    ),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () {
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(
+                          builder: (context) => const HomeScreen(),
+                        ),
+                        (route) => false,
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 16),
+                  Text(
+                    'Alerts & Notifications',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: context.colors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // Alerts List Content from Firestore Subcollection Stream
+            Expanded(
+              child: currentUser == null
+                  ? _buildEmptyState()
+                  : StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(currentUser.uid)
+                          .collection('notifications')
+                          .orderBy('timestamp', descending: true)
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                            child: CircularProgressIndicator(color: primaryRed),
+                          );
+                        }
+
+                        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                          return _buildEmptyState();
+                        }
+
+                        final docs = snapshot.data!.docs;
+
+                        return ListView.separated(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20.0,
+                            vertical: 8.0,
+                          ),
+                          itemCount: docs.length,
+                          separatorBuilder: (context, index) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            final alertData =
+                                docs[index].data() as Map<String, dynamic>;
+                            final String title =
+                                alertData['title']?.toString() ??
+                                'Notification';
+                            final String message =
+                                alertData['message']?.toString() ?? '';
+                            final bool isUnread = alertData['isRead'] == false;
+                            final Timestamp? timestamp =
+                                alertData['timestamp'] as Timestamp?;
+                            final String timeString = _formatTimestamp(
+                              timestamp,
+                            );
+
+                            return Container(
+                              padding: const EdgeInsets.all(16.0),
+                              decoration: BoxDecoration(
+                                color: isUnread
+                                    ? primaryRed.withValues(alpha: 0.04)
+                                    : context.colors.card,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: isUnread
+                                      ? primaryRed.withValues(alpha: 0.3)
+                                      : context.colors.border,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Notification Icon Container
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: isUnread
+                                          ? primaryRed.withValues(alpha: 0.12)
+                                          : context.colors.neutralFill,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      Icons.notifications_active_rounded,
+                                      color: isUnread
+                                          ? primaryRed
+                                          : context.colors.textSecondary,
+                                      size: 22,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+
+                                  // Content Text
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                title,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 16,
+                                                  fontWeight: isUnread
+                                                      ? FontWeight.bold
+                                                      : FontWeight.w600,
+                                                  color: context
+                                                      .colors
+                                                      .textPrimary,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              timeString,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: context.colors.textMuted,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          message,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: context.colors.textSecondary,
+                                            height: 1.3,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+
+      // Bottom Navigation Bar
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(color: context.colors.border, width: 1.0),
+          ),
+        ),
+        child: BottomNavigationBar(
+          currentIndex: _currentIndex,
+          onTap: (index) {
+            if (index == _currentIndex) return;
+
+            switch (index) {
+              case 0:
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => const HomeScreen()),
+                  (route) => false,
+                );
+                break;
+              case 1:
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(
+                    builder: (context) => const FloorSelectionScreen(),
+                  ),
+                );
+                break;
+              case 2:
+                break;
+              case 3:
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(
+                    builder: (context) => const StudentProfileScreen(),
+                  ),
+                );
+                break;
+            }
+          },
+          type: BottomNavigationBarType.fixed,
+          backgroundColor: context.colors.surface,
+          selectedItemColor: primaryRed,
+          unselectedItemColor: context.colors.textMuted,
+          selectedFontSize: 12,
+          unselectedFontSize: 12,
+          elevation: 0,
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home_outlined),
+              label: 'Home',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.map_outlined),
+              label: 'Map',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.notifications_rounded),
+              label: 'Alerts',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person_outline_rounded),
+              label: 'Profile',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Fallback view when no alerts exist
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.notifications_off_outlined,
+            size: 64,
+            color: context.colors.textMuted,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No notifications yet',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: context.colors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'We will notify you when something important happens.',
+            style: TextStyle(fontSize: 14, color: context.colors.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+}
